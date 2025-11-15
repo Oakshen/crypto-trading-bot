@@ -22,6 +22,8 @@ type TradeAction string
 const (
 	ActionBuy        TradeAction = "BUY"
 	ActionSell       TradeAction = "SELL"
+	ActionAddLong    TradeAction = "ADD_LONG"  // 加多仓 / Add to long position
+	ActionAddShort   TradeAction = "ADD_SHORT" // 加空仓 / Add to short position
 	ActionCloseLong  TradeAction = "CLOSE_LONG"
 	ActionCloseShort TradeAction = "CLOSE_SHORT"
 	ActionHold       TradeAction = "HOLD"
@@ -61,6 +63,13 @@ type Position struct {
 	PositionAmt      float64   // 仓位金额 / Position amount
 	Leverage         int       // 杠杆倍数 / Leverage
 	LiquidationPrice float64   // 强平价格 / Liquidation price
+
+	// Add position support (加仓支持)
+	// 加仓支持字段
+	FirstEntryPrice   float64 // 首次入场价格 / First entry price (same as EntryPrice for initial position)
+	AverageEntryPrice float64 // 平均入场价格 / Weighted average entry price after adding positions
+	TotalEntries      int     // 加仓次数（包括首次开仓）/ Total entries including initial open (starts at 1)
+	TotalInvestment   float64 // 累计投入本金 (USDT) / Total investment in USDT
 
 	// Stop-loss management
 	// 止损管理
@@ -427,6 +436,10 @@ func (e *BinanceExecutor) ExecuteTrade(ctx context.Context, symbol string, actio
 		err = e.executeBuy(ctx, symbol, currentPosition, amount, result)
 	case ActionSell:
 		err = e.executeSell(ctx, symbol, currentPosition, amount, result)
+	case ActionAddLong:
+		err = e.executeAddPosition(ctx, symbol, currentPosition, amount, true, result)
+	case ActionAddShort:
+		err = e.executeAddPosition(ctx, symbol, currentPosition, amount, false, result)
 	case ActionCloseLong:
 		err = e.executeCloseLong(ctx, symbol, currentPosition, result)
 	case ActionCloseShort:
@@ -595,6 +608,118 @@ func (e *BinanceExecutor) executeSell(ctx context.Context, symbol string, curren
 		result.Message = "已有空仓，不重复开仓（系统保护：防止意外加仓）"
 		e.logger.Warning("⚠️ 已有空仓，不重复开仓")
 	}
+
+	return nil
+}
+
+// executeAddPosition adds to an existing position (both long and short)
+// executeAddPosition 加仓到现有持仓（多仓和空仓）
+func (e *BinanceExecutor) executeAddPosition(ctx context.Context, symbol string, currentPosition *Position, amount float64, isLong bool, result *TradeResult) error {
+	// Validate current position exists and matches direction
+	// 验证当前持仓存在且方向匹配
+	if currentPosition == nil {
+		result.Message = "没有持仓可加仓"
+		e.logger.Warning("⚠️ 没有持仓可加仓")
+		return nil
+	}
+
+	expectedSide := "long"
+	if !isLong {
+		expectedSide = "short"
+	}
+
+	if currentPosition.Side != expectedSide {
+		result.Message = fmt.Sprintf("持仓方向不匹配：当前持仓为 %s，无法加仓到 %s", currentPosition.Side, expectedSide)
+		e.logger.Warning(fmt.Sprintf("⚠️ 持仓方向不匹配：当前 %s，尝试加仓 %s", currentPosition.Side, expectedSide))
+		return nil
+	}
+
+	binanceSymbol := e.config.GetBinanceSymbolFor(symbol)
+
+	// Determine side and position side for the add order
+	// 确定加仓订单的方向和持仓侧
+	var orderSide futures.SideType
+	var positionSide futures.PositionSideType
+
+	if isLong {
+		e.logger.Info("📈 加多仓...")
+		orderSide = futures.SideTypeBuy
+		positionSide = futures.PositionSideTypeLong
+	} else {
+		e.logger.Info("📉 加空仓...")
+		orderSide = futures.SideTypeSell
+		positionSide = futures.PositionSideTypeShort
+	}
+
+	if e.positionMode == PositionModeOneWay {
+		positionSide = futures.PositionSideTypeBoth
+	}
+
+	// Place market order to add to position
+	// 下市价单加仓
+	order, err := e.client.NewCreateOrderService().
+		Symbol(binanceSymbol).
+		Side(orderSide).
+		PositionSide(positionSide).
+		Type(futures.OrderTypeMarket).
+		Quantity(fmt.Sprintf("%.4f", amount)).
+		Do(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	// Get fill price from order
+	// 从订单获取成交价格
+	fillPrice, _ := parseFloat(order.AvgPrice)
+	if fillPrice == 0 {
+		// Fallback: query current market price
+		// 回退：查询当前市价
+		currentPrice, err := e.GetCurrentPrice(ctx, symbol)
+		if err == nil {
+			fillPrice = currentPrice
+		}
+	}
+
+	// Calculate new average entry price
+	// 计算新的平均入场价格
+	oldQuantity := currentPosition.Quantity
+	oldAvgPrice := currentPosition.AverageEntryPrice
+	if oldAvgPrice == 0 {
+		oldAvgPrice = currentPosition.EntryPrice // Fallback to entry price if average not set
+	}
+
+	newQuantity := oldQuantity + amount
+	newAvgPrice := (oldAvgPrice*oldQuantity + fillPrice*amount) / newQuantity
+
+	// Calculate investment increase
+	// 计算新增投资额
+	leverage := float64(currentPosition.Leverage)
+	if leverage == 0 {
+		leverage = float64(e.config.BinanceLeverage)
+	}
+	addedInvestment := (fillPrice * amount) / leverage
+
+	// Update position fields
+	// 更新持仓字段
+	currentPosition.Quantity = newQuantity
+	currentPosition.Size = newQuantity
+	currentPosition.AverageEntryPrice = newAvgPrice
+	currentPosition.TotalEntries++
+	currentPosition.TotalInvestment += addedInvestment
+
+	result.Success = true
+	result.OrderID = fmt.Sprintf("%d", order.OrderID)
+	result.Price = fillPrice
+	result.Amount = newQuantity // Return total quantity after adding
+	result.Message = fmt.Sprintf("加仓成功：数量 %.4f → %.4f，平均价 %.2f → %.2f",
+		oldQuantity, newQuantity, oldAvgPrice, newAvgPrice)
+
+	e.logger.Success(fmt.Sprintf("✅ 加仓成功，订单ID: %d", order.OrderID))
+	e.logger.Info(fmt.Sprintf("   原持仓: %.4f @ %.2f", oldQuantity, oldAvgPrice))
+	e.logger.Info(fmt.Sprintf("   新增: %.4f @ %.2f", amount, fillPrice))
+	e.logger.Info(fmt.Sprintf("   合计: %.4f @ %.2f (平均)", newQuantity, newAvgPrice))
+	e.logger.Info(fmt.Sprintf("   累计加仓 %d 次，总投资 %.2f USDT", currentPosition.TotalEntries, currentPosition.TotalInvestment))
 
 	return nil
 }

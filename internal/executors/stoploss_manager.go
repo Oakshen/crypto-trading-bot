@@ -205,6 +205,95 @@ func (sm *StopLossManager) GetPosition(symbol string) *Position {
 	return sm.positions[normalizedSymbol]
 }
 
+// AddToPosition updates stop-loss after adding to position
+// AddToPosition 加仓后更新止损单
+func (sm *StopLossManager) AddToPosition(ctx context.Context, pos *Position, newStopLoss float64) error {
+	// Normalize symbol
+	// 标准化符号
+	normalizedSymbol := sm.config.GetBinanceSymbolFor(pos.Symbol)
+
+	sm.mu.Lock()
+	managedPos, exists := sm.positions[normalizedSymbol]
+	if !exists {
+		sm.mu.Unlock()
+		return fmt.Errorf("持仓 %s 不存在于止损管理器中", pos.Symbol)
+	}
+	sm.mu.Unlock()
+
+	sm.logger.Info(fmt.Sprintf("【%s】开始更新加仓后的止损单...", normalizedSymbol))
+
+	// Cancel old stop-loss order
+	// 取消旧止损单
+	if managedPos.StopLossOrderID != "" {
+		sm.logger.Info(fmt.Sprintf("  → 取消旧止损单: %s", managedPos.StopLossOrderID))
+		if err := sm.cancelStopLossOrder(ctx, managedPos); err != nil {
+			sm.logger.Error(fmt.Sprintf("❌ 取消旧止损单失败: %v", err))
+			return fmt.Errorf("无法取消旧止损单（订单ID: %s）: %w", managedPos.StopLossOrderID, err)
+		}
+	}
+
+	// Update managed position with new values from added position
+	// 用加仓后的新值更新管理的持仓
+	managedPos.Quantity = pos.Quantity
+	managedPos.Size = pos.Size
+	managedPos.AverageEntryPrice = pos.AverageEntryPrice
+	managedPos.TotalEntries = pos.TotalEntries
+	managedPos.TotalInvestment = pos.TotalInvestment
+
+	// Determine new stop-loss price
+	// 确定新止损价格
+	stopLossPrice := newStopLoss
+	if stopLossPrice == 0 {
+		// If LLM didn't provide new stop-loss, protect cost (average entry price)
+		// 如果 LLM 没有提供新止损，则保护成本价（平均入场价）
+		if managedPos.Side == "long" {
+			stopLossPrice = managedPos.AverageEntryPrice * 0.975 // -2.5%
+		} else {
+			stopLossPrice = managedPos.AverageEntryPrice * 1.025 // +2.5%
+		}
+		sm.logger.Info(fmt.Sprintf("  → LLM 未提供新止损，使用成本保护止损: %.2f", stopLossPrice))
+	} else {
+		sm.logger.Info(fmt.Sprintf("  → 使用 LLM 提供的新止损: %.2f", stopLossPrice))
+	}
+
+	// Place new stop-loss order with updated quantity
+	// 下新止损单（使用更新后的数量）
+	sm.logger.Info(fmt.Sprintf("  → 下新止损单: 数量 %.4f, 止损价 %.2f", managedPos.Quantity, stopLossPrice))
+	if err := sm.placeStopLossOrder(ctx, managedPos, stopLossPrice); err != nil {
+		return fmt.Errorf("下新止损单失败: %w", err)
+	}
+
+	// Update stop-loss price
+	// 更新止损价格
+	managedPos.CurrentStopLoss = stopLossPrice
+
+	sm.logger.Success(fmt.Sprintf("✅【%s】加仓后止损单已更新", normalizedSymbol))
+	sm.logger.Info(fmt.Sprintf("   新持仓: %.4f @ %.2f (平均)", managedPos.Quantity, managedPos.AverageEntryPrice))
+	sm.logger.Info(fmt.Sprintf("   新止损: %.2f (订单ID: %s)", stopLossPrice, managedPos.StopLossOrderID))
+
+	// Sync to database
+	// 同步到数据库
+	if sm.storage != nil {
+		posRecord, err := sm.storage.GetPositionByID(managedPos.ID)
+		if err == nil && posRecord != nil {
+			posRecord.Quantity = managedPos.Quantity
+			posRecord.AverageEntryPrice = managedPos.AverageEntryPrice
+			posRecord.TotalEntries = managedPos.TotalEntries
+			posRecord.TotalInvestment = managedPos.TotalInvestment
+			posRecord.CurrentStopLoss = managedPos.CurrentStopLoss
+			posRecord.StopLossOrderID = managedPos.StopLossOrderID
+
+			if err := sm.storage.UpdatePosition(posRecord); err != nil {
+				sm.logger.Warning(fmt.Sprintf("⚠️  更新数据库失败: %v", err))
+			} else {
+				sm.logger.Info("✓ 数据库已同步")
+			}
+		}
+	}
+
+	return nil
+}
+
 // UpdateStopLoss updates stop-loss price for a position (called by LLM every 15 minutes)
 // UpdateStopLoss 更新持仓的止损价格（每 15 分钟由 LLM 调用）
 func (sm *StopLossManager) UpdateStopLoss(ctx context.Context, symbol string, newStopLoss float64, reason string) error {

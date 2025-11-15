@@ -124,6 +124,28 @@ func extractAction(text string) string {
 			`开空仓`,
 			`卖出`,
 		},
+		"add_long": {
+			`建议.*?加多仓`,
+			`建议.*?加仓.*?多`,
+			`建议.*?增持.*?多`,
+			`action.*?add.*?long`,
+			`recommend.*?add.*?long`,
+			`加多仓`,
+			`加仓.*?多`,
+			`增持多单`,
+			`追加多仓`,
+		},
+		"add_short": {
+			`建议.*?加空仓`,
+			`建议.*?加仓.*?空`,
+			`建议.*?增持.*?空`,
+			`action.*?add.*?short`,
+			`recommend.*?add.*?short`,
+			`加空仓`,
+			`加仓.*?空`,
+			`增持空单`,
+			`追加空仓`,
+		},
 		"close_long": {
 			`建议.*?平多`,
 			`建议.*?平掉多单`,
@@ -173,6 +195,10 @@ func mapToTradeAction(action string) executors.TradeAction {
 		return executors.ActionBuy
 	case "sell":
 		return executors.ActionSell
+	case "add_long":
+		return executors.ActionAddLong
+	case "add_short":
+		return executors.ActionAddShort
 	case "close_long":
 		return executors.ActionCloseLong
 	case "close_short":

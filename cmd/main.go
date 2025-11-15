@@ -407,6 +407,48 @@ func main() {
 			if result.Success {
 				executionResults[symbol] = fmt.Sprintf("✅ 成功执行 %s", result.Action)
 
+				// Handle closing positions: cancel stop-loss and update database
+				// 处理平仓：取消止损单并更新数据库
+				if symbolDecision.Action == executors.ActionCloseLong || symbolDecision.Action == executors.ActionCloseShort {
+					// Get close price and calculate realized PnL
+					// 获取平仓价格并计算已实现盈亏
+					closePrice := result.Price
+					realizedPnL := 0.0
+					if currentPosition != nil {
+						realizedPnL = currentPosition.UnrealizedPnL
+					}
+
+					// Close position completely (cancel stop-loss, remove from memory, update database)
+					// 完整关闭持仓（取消止损单、从内存移除、更新数据库）
+					closeReason := fmt.Sprintf("LLM决策平仓: %s", symbolDecision.Reason)
+					if err := stopLossManager.ClosePosition(ctx, symbol, closePrice, closeReason, realizedPnL); err != nil {
+						log.Warning(fmt.Sprintf("⚠️  关闭 %s 持仓失败: %v", symbol, err))
+					}
+				}
+
+				// Handle adding to existing positions: update stop-loss with new quantity
+				// 处理加仓：使用新数量更新止损单
+				if symbolDecision.Action == executors.ActionAddLong || symbolDecision.Action == executors.ActionAddShort {
+					// Get updated position after adding
+					// 获取加仓后的更新持仓
+					updatedPosition, err := executor.GetCurrentPosition(ctx, symbol)
+					if err != nil {
+						log.Warning(fmt.Sprintf("⚠️  获取 %s 加仓后持仓失败: %v", symbol, err))
+					} else if updatedPosition != nil {
+						// Get new stop-loss from LLM decision (if provided)
+						// 从 LLM 决策中获取新止损价格（如果提供）
+						newStopLoss := symbolDecision.StopLoss
+
+						// Call AddToPosition to update stop-loss order
+						// 调用 AddToPosition 更新止损单
+						if err := stopLossManager.AddToPosition(ctx, updatedPosition, newStopLoss); err != nil {
+							log.Warning(fmt.Sprintf("⚠️  更新 %s 加仓后止损失败: %v", symbol, err))
+						} else {
+							log.Success(fmt.Sprintf("✅ %s 加仓后止损单已更新", symbol))
+						}
+					}
+				}
+
 				// Register position for stop-loss management (only for opening positions)
 				// 注册持仓到止损管理器（仅开仓时）
 				if symbolDecision.Action == executors.ActionBuy || symbolDecision.Action == executors.ActionSell {

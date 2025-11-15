@@ -195,8 +195,8 @@ func (tc *TradeCoordinator) validateAction(action TradeAction, currentPosition *
 		return nil
 	}
 
-	// Has position, validate close actions
-	// 有持仓，验证平仓动作
+	// Has position, validate actions
+	// 有持仓，验证动作
 	switch action {
 	case ActionBuy:
 		if currentPosition.Side == "long" {
@@ -205,6 +205,14 @@ func (tc *TradeCoordinator) validateAction(action TradeAction, currentPosition *
 	case ActionSell:
 		if currentPosition.Side == "short" {
 			return fmt.Errorf("已有空仓，不能重复开空")
+		}
+	case ActionAddLong:
+		if currentPosition.Side != "long" {
+			return fmt.Errorf("当前无多仓，无法加多仓（当前持仓: %s）", currentPosition.Side)
+		}
+	case ActionAddShort:
+		if currentPosition.Side != "short" {
+			return fmt.Errorf("当前无空仓，无法加空仓（当前持仓: %s）", currentPosition.Side)
 		}
 	case ActionCloseLong:
 		if currentPosition.Side != "long" {
@@ -351,6 +359,18 @@ func (tc *TradeCoordinator) postExecutionVerification(ctx context.Context, symbo
 			return fmt.Errorf("开空后应有空仓，但当前持仓状态不符")
 		}
 		tc.logger.Info(fmt.Sprintf("  ✓ 空仓已建立: %.4f @ $%.2f", newPosition.Size, newPosition.EntryPrice))
+
+	case ActionAddLong:
+		if newPosition == nil || newPosition.Side != "long" {
+			return fmt.Errorf("加多仓后应有多仓，但当前持仓状态不符")
+		}
+		tc.logger.Info(fmt.Sprintf("  ✓ 多仓已加仓: %.4f @ $%.2f (平均)", newPosition.Size, newPosition.AverageEntryPrice))
+
+	case ActionAddShort:
+		if newPosition == nil || newPosition.Side != "short" {
+			return fmt.Errorf("加空仓后应有空仓，但当前持仓状态不符")
+		}
+		tc.logger.Info(fmt.Sprintf("  ✓ 空仓已加仓: %.4f @ $%.2f (平均)", newPosition.Size, newPosition.AverageEntryPrice))
 
 	case ActionCloseLong, ActionCloseShort:
 		if newPosition != nil && newPosition.Size > 0.0001 {
