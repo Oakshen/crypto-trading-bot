@@ -243,6 +243,14 @@ func main() {
 				parsedDecision.Confidence,
 				parsedDecision.Leverage,
 				parsedDecision.Reason)
+			// Log successful parsing
+			// 记录解析成功
+			log.Info(fmt.Sprintf("【%s】决策解析成功: Action=%s, Confidence=%.2f, Leverage=%d",
+				symbol, parsedDecision.Action, parsedDecision.Confidence, parsedDecision.Leverage))
+		} else {
+			// Log parsing failure
+			// 记录解析失败
+			log.Warning(fmt.Sprintf("【%s】决策解析失败，使用完整决策文本 (可能导致前端显示不准确)", symbol))
 		}
 
 		session := &storage.TradingSession{

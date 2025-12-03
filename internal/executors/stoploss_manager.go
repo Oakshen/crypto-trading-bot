@@ -1132,6 +1132,52 @@ func (sm *StopLossManager) GetAllPositions() []*Position {
 	return positions
 }
 
+// UpdatePositionHighestPrice updates the highest/lowest price and current price for a position
+// UpdatePositionHighestPrice 更新持仓的最高/最低价和当前价格
+// This is used by the independent TrailingStopManager to sync price updates from 3m Klines
+// 被独立的TrailingStopManager使用，用于同步3m K线的价格更新
+func (sm *StopLossManager) UpdatePositionHighestPrice(symbol string, highestPrice, currentPrice float64) error {
+	normalizedSymbol := sm.config.GetBinanceSymbolFor(symbol)
+
+	sm.mu.Lock()
+	pos, exists := sm.positions[normalizedSymbol]
+	if !exists {
+		sm.mu.Unlock()
+		return nil // No position / 无持仓
+	}
+
+	// Calculate unrealized PnL / 计算未实现盈亏
+	var unrealizedPnL float64
+	if pos.Side == "long" {
+		unrealizedPnL = (currentPrice - pos.EntryPrice) * pos.Quantity
+	} else {
+		unrealizedPnL = (pos.EntryPrice - currentPrice) * pos.Quantity
+	}
+
+	// Update memory / 更新内存
+	pos.HighestPrice = highestPrice
+	pos.CurrentPrice = currentPrice
+	pos.UnrealizedPnL = unrealizedPnL
+	posID := pos.ID
+	sm.mu.Unlock()
+
+	// Update database / 更新数据库
+	if sm.storage != nil {
+		posRecord, err := sm.storage.GetPositionByID(posID)
+		if err == nil && posRecord != nil {
+			posRecord.HighestPrice = highestPrice
+			posRecord.CurrentPrice = currentPrice
+			posRecord.UnrealizedPnL = unrealizedPnL
+
+			if err := sm.storage.UpdatePosition(posRecord); err != nil {
+				return fmt.Errorf("更新数据库失败: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // Stop stops the stop-loss manager
 // Stop 停止止损管理器
 func (sm *StopLossManager) Stop() {

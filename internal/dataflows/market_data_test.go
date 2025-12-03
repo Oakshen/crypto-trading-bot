@@ -310,8 +310,8 @@ func TestCalculateIndicators(t *testing.T) {
 		if len(indicators.EMA_26) != dataPoints {
 			t.Errorf("EMA_26 length: expected %d, got %d", dataPoints, len(indicators.EMA_26))
 		}
-		if len(indicators.ATR) != dataPoints {
-			t.Errorf("ATR length: expected %d, got %d", dataPoints, len(indicators.ATR))
+		if len(indicators.ATR_7) != dataPoints {
+			t.Errorf("ATR length: expected %d, got %d", dataPoints, len(indicators.ATR_7))
 		}
 		if len(indicators.ATR_3) != dataPoints {
 			t.Errorf("ATR_3 length: expected %d, got %d", dataPoints, len(indicators.ATR_3))
@@ -380,8 +380,8 @@ func TestCalculateIndicators(t *testing.T) {
 
 		// 验证 ATR 为正值
 		// Verify ATR is positive
-		if !math.IsNaN(indicators.ATR[lastIdx]) && indicators.ATR[lastIdx] <= 0 {
-			t.Errorf("ATR should be positive, got: %f", indicators.ATR[lastIdx])
+		if !math.IsNaN(indicators.ATR_7[lastIdx]) && indicators.ATR_7[lastIdx] <= 0 {
+			t.Errorf("ATR should be positive, got: %f", indicators.ATR_7[lastIdx])
 		}
 		if !math.IsNaN(indicators.ATR_3[lastIdx]) && indicators.ATR_3[lastIdx] <= 0 {
 			t.Errorf("ATR_3 should be positive, got: %f", indicators.ATR_3[lastIdx])

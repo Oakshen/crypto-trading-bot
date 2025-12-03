@@ -137,7 +137,8 @@ func (s *Server) handleIndex(ctx context.Context, c *app.RequestContext) {
 		"mul": func(a, b float64) float64 {
 			return a * b
 		},
-		"extractAction": extractActionFromDecision,
+		"extractAction":           extractActionFromDecision,
+		"extractActionWithSymbol": extractActionFromDecisionWithSymbol,
 	}
 	tmpl := template.Must(template.New("index.html").Funcs(funcMap).ParseFiles("internal/web/templates/index.html"))
 
@@ -211,7 +212,8 @@ func (s *Server) handleSessionDetail(ctx context.Context, c *app.RequestContext)
 	// Create template with custom functions
 	// 创建带自定义函数的模板
 	funcMap := template.FuncMap{
-		"extractAction": extractActionFromDecision,
+		"extractAction":           extractActionFromDecision,
+		"extractActionWithSymbol": extractActionFromDecisionWithSymbol,
 	}
 	tmpl := template.Must(template.New("session_detail.html").Funcs(funcMap).ParseFiles("internal/web/templates/session_detail.html"))
 
@@ -407,9 +409,15 @@ func (s *Server) handleSymbols(ctx context.Context, c *app.RequestContext) {
 	})
 }
 
-// extractActionFromDecision extracts trading action from decision text
-// extractActionFromDecision 从决策文本中提取交易动作
+// extractActionFromDecision extracts trading action from decision text (legacy version without symbol)
+// extractActionFromDecision 从决策文本中提取交易动作（旧版本，不带交易对参数）
 func extractActionFromDecision(decision string) string {
+	return extractActionFromDecisionWithSymbol(decision, "")
+}
+
+// extractActionFromDecisionWithSymbol extracts trading action from decision text for a specific symbol
+// extractActionFromDecisionWithSymbol 从决策文本中提取特定交易对的交易动作
+func extractActionFromDecisionWithSymbol(decision string, symbol string) string {
 	if decision == "" {
 		return "UNKNOWN"
 	}
@@ -418,8 +426,64 @@ func extractActionFromDecision(decision string) string {
 	// 转换为大写用于匹配
 	text := strings.ToUpper(decision)
 
-	// Try to find action patterns
-	// 尝试查找动作模式
+	// 策略1：检测decision文本是否包含多个交易对的决策块
+	// Strategy 1: Detect if decision text contains multiple symbol decision blocks
+	// 通过检测是否有多个【符号】标记来判断
+	// Detect by counting 【symbol】 markers
+	hasMultipleSymbols := strings.Count(text, "【") > 1 ||
+		strings.Count(text, "[") > strings.Count(text, "【")+1
+
+	// 策略2：尝试找到该交易对的决策块
+	// Strategy 2: Try to find this symbol's decision block
+	var symbolBlock string
+	var foundSymbol bool
+
+	if symbol != "" {
+		symbolMarkers := []string{
+			"【" + strings.ToUpper(symbol) + "】",
+			"[" + strings.ToUpper(symbol) + "]",
+			strings.ToUpper(symbol) + ":",
+		}
+
+		for _, marker := range symbolMarkers {
+			if idx := strings.Index(text, marker); idx != -1 {
+				foundSymbol = true
+				// 找到下一个【或结尾
+				// Find next 【 or end
+				endIdx := strings.Index(text[idx+len(marker):], "【")
+				if endIdx == -1 {
+					symbolBlock = text[idx:]
+				} else {
+					symbolBlock = text[idx : idx+len(marker)+endIdx]
+				}
+				break
+			}
+		}
+	}
+
+	// 策略3：决定搜索范围
+	// Strategy 3: Decide search scope
+	var searchText string
+	if foundSymbol {
+		// 找到了该交易对的块，只在块内搜索
+		// Found this symbol's block, search only within it
+		searchText = symbolBlock
+	} else if hasMultipleSymbols && symbol != "" {
+		// 文本包含多个交易对但没找到当前交易对
+		// Text contains multiple symbols but current symbol not found
+		// 说明LLM没有为该交易对生成决策
+		// Indicates LLM didn't generate decision for this symbol
+		return "NO_DECISION"
+	} else {
+		// 文本只包含一个决策块（可能是该交易对的专属决策）
+		// Text contains only one decision block (possibly dedicated to this symbol)
+		// 或者是单币种决策格式（没有【符号】标记）
+		// Or single-currency decision format (no 【symbol】 markers)
+		searchText = text
+	}
+
+	// 策略4：提取动作（按优先级顺序）
+	// Strategy 4: Extract action (in priority order)
 	patterns := []struct {
 		action  string
 		matches []string
@@ -435,17 +499,24 @@ func extractActionFromDecision(decision string) string {
 		for _, pattern := range p.matches {
 			// Try literal match first
 			// 先尝试字面匹配
-			if strings.Contains(text, strings.ToUpper(pattern)) {
+			if strings.Contains(searchText, strings.ToUpper(pattern)) {
 				return p.action
 			}
 			// Try regex match
 			// 尝试正则匹配
-			if matched, _ := regexp.MatchString(pattern, text); matched {
+			if matched, _ := regexp.MatchString(pattern, searchText); matched {
 				return p.action
 			}
 		}
 	}
 
+	// 如果找到了该交易对的块但没有提取到动作，返回UNKNOWN
+	// If found symbol block but couldn't extract action, return UNKNOWN
+	// 否则返回HOLD（兼容旧数据）
+	// Otherwise return HOLD (backward compatible)
+	if foundSymbol {
+		return "UNKNOWN"
+	}
 	return "HOLD"
 }
 
@@ -617,7 +688,8 @@ func (s *Server) handleTradeHistory(ctx context.Context, c *app.RequestContext) 
 	// Create template with custom functions
 	// 创建带自定义函数的模板
 	funcMap := template.FuncMap{
-		"extractAction": extractActionFromDecision,
+		"extractAction":           extractActionFromDecision,
+		"extractActionWithSymbol": extractActionFromDecisionWithSymbol,
 		"add": func(a, b int) int {
 			return a + b
 		},

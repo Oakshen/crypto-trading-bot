@@ -18,6 +18,7 @@ import (
 	"github.com/oak/crypto-trading-bot/internal/constant"
 	"github.com/oak/crypto-trading-bot/internal/executors"
 	"github.com/oak/crypto-trading-bot/internal/logger"
+	"github.com/oak/crypto-trading-bot/internal/managers"
 	"github.com/oak/crypto-trading-bot/internal/portfolio"
 	"github.com/oak/crypto-trading-bot/internal/scheduler"
 	"github.com/oak/crypto-trading-bot/internal/storage"
@@ -27,6 +28,10 @@ import (
 // Global stop-loss manager
 // 全局止损管理器
 var globalStopLossManager *executors.StopLossManager
+
+// Global trailing stop manager (independent 3-minute loop)
+// 全局追踪止损管理器（独立的3分钟循环）
+var globalTrailingStopManager *managers.TrailingStopManager
 
 func main() {
 	// Load configuration
@@ -250,6 +255,17 @@ func main() {
 		log.Info("暂无活跃持仓")
 	}
 
+	// Initialize and start independent trailing stop manager
+	// 初始化并启动独立追踪止损管理器
+	log.Subheader("启动独立追踪止损管理器", '─', 80)
+	globalTrailingStopManager = managers.NewTrailingStopManager(cfg, globalStopLossManager, log)
+	if globalTrailingStopManager != nil {
+		go globalTrailingStopManager.Start() // 独立goroutine运行 / Run in separate goroutine
+		log.Success("追踪止损管理器已启动（每3分钟执行一次，对齐K线边界）")
+	} else {
+		log.Warning("追踪止损管理器初始化失败")
+	}
+
 	// Initialize portfolio manager for balance tracking
 	// 初始化投资组合管理器用于余额跟踪
 	portfolioMgr := portfolio.NewPortfolioManager(cfg, executor, log)
@@ -373,7 +389,20 @@ func main() {
 		select {
 		case <-sigChan:
 			log.Warning("\n收到停止信号，正在关闭...")
+
+			// Stop trailing stop manager
+			// 停止追踪止损管理器
+			if globalTrailingStopManager != nil {
+				globalTrailingStopManager.Stop()
+				log.Success("追踪止损管理器已停止")
+			}
+
+			// Stop stop-loss manager
+			// 停止止损管理器
 			globalStopLossManager.Stop()
+
+			// Stop web server
+			// 停止Web服务器
 			if err := webServer.Stop(ctx); err != nil {
 				log.Warning(fmt.Sprintf("Web 服务器停止失败: %v", err))
 			}
@@ -484,6 +513,14 @@ func runTradingAnalysis(ctx context.Context, cfg *config.Config, log *logger.Col
 				parsedDecision.Confidence,
 				parsedDecision.Leverage,
 				parsedDecision.Reason)
+			// Log successful parsing
+			// 记录解析成功
+			log.Info(fmt.Sprintf("【%s】决策解析成功: Action=%s, Confidence=%.2f, Leverage=%d",
+				symbol, parsedDecision.Action, parsedDecision.Confidence, parsedDecision.Leverage))
+		} else {
+			// Log parsing failure
+			// 记录解析失败
+			log.Warning(fmt.Sprintf("【%s】决策解析失败，使用完整决策文本 (可能导致前端显示不准确)", symbol))
 		}
 
 		session := &storage.TradingSession{

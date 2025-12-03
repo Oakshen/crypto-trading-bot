@@ -354,7 +354,7 @@
                                     <td>{{.Timeframe}}</td>
                                     <td>{{.CreatedAt.Format "01-02 15:04"}}</td>
                                     <td>
-                                        {{$action := extractAction .Decision}}
+                                        {{$action := extractActionWithSymbol .Decision .Symbol}}
                                         {{if eq $action "BUY"}}
                                             <span class="action-badge action-buy">📈 BUY</span>
                                         {{else if eq $action "SELL"}}
@@ -365,6 +365,8 @@
                                             <span class="action-badge action-close">🔒 平空</span>
                                         {{else if eq $action "HOLD"}}
                                             <span class="action-badge action-hold">💤 HOLD</span>
+                                        {{else if eq $action "NO_DECISION"}}
+                                            <span class="action-badge action-no-decision" style="background: #6c757d; color: white;">➖ N/A</span>
                                         {{else}}
                                             <span class="action-badge action-unknown">❓ {{$action}}</span>
                                         {{end}}

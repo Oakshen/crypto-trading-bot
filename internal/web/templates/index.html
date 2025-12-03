@@ -795,11 +795,13 @@
                                     {{if .Executed}}
                                     <div class="trade-history-item" onclick="window.location.href='/session/{{.ID}}'">
                                         <div class="trade-symbol">{{.Symbol}}</div>
-                                        {{$action := extractAction .Decision}}
+                                        {{$action := extractActionWithSymbol .Decision .Symbol}}
                                         {{if eq $action "BUY"}}
                                             <span class="trade-action action-buy">BUY</span>
                                         {{else if eq $action "SELL"}}
                                             <span class="trade-action action-sell">SELL</span>
+                                        {{else if eq $action "NO_DECISION"}}
+                                            <span class="trade-action action-no-decision" style="background: #6c757d; color: white;">N/A</span>
                                         {{else}}
                                             <span class="trade-action action-hold">{{$action}}</span>
                                         {{end}}
