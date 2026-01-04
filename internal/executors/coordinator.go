@@ -39,7 +39,7 @@ func (tc *TradeCoordinator) ExecuteDecision(ctx context.Context, symbol string, 
 
 // ExecuteDecisionWithParams executes a trading decision with custom leverage and position size
 // ExecuteDecisionWithParams 使用自定义杠杆和仓位大小执行交易决策
-func (tc *TradeCoordinator) ExecuteDecisionWithParams(ctx context.Context, symbol string, action TradeAction, reason string, leverage int, positionSizePercent float64) (*TradeResult, error) {
+func (tc *TradeCoordinator) ExecuteDecisionWithParams(ctx context.Context, symbol string, action TradeAction, reason string, leverage int, positionSizePercent float64) (result *TradeResult, err error) {
 	tc.logger.Header("交易执行协调器", '=', 80)
 	tc.logger.Info(fmt.Sprintf("交易对: %s", symbol))
 	tc.logger.Info(fmt.Sprintf("决策动作: %s", action))
@@ -49,6 +49,26 @@ func (tc *TradeCoordinator) ExecuteDecisionWithParams(ctx context.Context, symbo
 	}
 	if positionSizePercent > 0 {
 		tc.logger.Info(fmt.Sprintf("LLM 建议仓位: %.1f%% 资金", positionSizePercent))
+	}
+
+	var openSlotRelease func()
+	openSlotRemaining := 0
+	if tc.config.MaxOpenPosition > 0 && (action == ActionBuy || action == ActionSell) {
+		release, ok, remaining := tc.executor.acquireOpenPositionSlot()
+		if !ok {
+			return nil, fmt.Errorf("已达到单日最大开仓次数限制（MAX_OPEN_POSITION=%d），今日将拒绝开仓(BUY/SELL)，请等待明日重置或仅执行平仓(CLOSE_LONG/CLOSE_SHORT)", tc.config.MaxOpenPosition)
+		}
+		openSlotRelease = release
+		openSlotRemaining = remaining
+
+		defer func() {
+			if openSlotRelease == nil {
+				return
+			}
+			if err != nil || result == nil || !result.Success {
+				openSlotRelease()
+			}
+		}()
 	}
 
 	// Step 1: Pre-execution safety checks
@@ -126,12 +146,15 @@ func (tc *TradeCoordinator) ExecuteDecisionWithParams(ctx context.Context, symbo
 		}, nil
 	}
 
-	result := tc.executor.ExecuteTrade(ctx, symbol, action, positionSize, reason)
+	result = tc.executor.ExecuteTrade(ctx, symbol, action, positionSize, reason)
 
 	// Step 7: Post-execution verification
 	// 步骤 7: 执行后验证
 	tc.logger.Info("\n[步骤 7/7] 执行后验证...")
 	if result.Success {
+		if openSlotRelease != nil && (action == ActionBuy || action == ActionSell) {
+			tc.logger.Info(fmt.Sprintf("📌 单日开仓次数已消耗 1 次，今日剩余: %d", openSlotRemaining))
+		}
 		if err := tc.postExecutionVerification(ctx, symbol, action, result); err != nil {
 			tc.logger.Warning(fmt.Sprintf("⚠️  执行后验证发现问题: %v", err))
 		} else {

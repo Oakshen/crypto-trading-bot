@@ -125,6 +125,8 @@ type BinanceExecutor struct {
 	positionMode PositionMode
 	logger       *logger.ColorLogger
 	tradeHistory []TradeResult
+
+	openPositionLimiter *DailyOpenPositionLimiter
 }
 
 // NewBinanceExecutor creates a new BinanceExecutor
@@ -166,11 +168,22 @@ func NewBinanceExecutor(cfg *config.Config, log *logger.ColorLogger) *BinanceExe
 		tradeHistory: make([]TradeResult, 0),
 	}
 
+	if cfg.MaxOpenPosition > 0 {
+		executor.openPositionLimiter = NewDailyOpenPositionLimiter(cfg.MaxOpenPosition)
+	}
+
 	// Mode logging removed from constructor to avoid repetitive logs
 	// 从构造函数中移除模式日志以避免重复
 	// The mode is logged once during startup in main.go
 
 	return executor
+}
+
+func (e *BinanceExecutor) acquireOpenPositionSlot() (release func(), ok bool, remaining int) {
+	if e == nil || e.openPositionLimiter == nil {
+		return nil, true, -1
+	}
+	return e.openPositionLimiter.Acquire()
 }
 
 // DetectPositionMode detects the current position mode

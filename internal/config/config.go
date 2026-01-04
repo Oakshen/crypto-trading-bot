@@ -56,6 +56,7 @@ type Config struct {
 	CryptoTimeframe    string   // K线数据时间间隔 / K-line data timeframe
 	TradingInterval    string   // 系统运行间隔（独立于K线间隔）/ System execution interval (independent from K-line timeframe)
 	CryptoLookbackDays int
+	MaxOpenPosition    int // 单日最大开仓次数（0=不限制）/ Daily max number of opening positions per day (0 = unlimited)
 	// PositionSize removed - now uses LLM's position size recommendation
 	// 移除 PositionSize - 现在使用 LLM 的仓位建议
 
@@ -156,6 +157,7 @@ func LoadConfig(pathToEnv string) (*Config, error) {
 		CryptoTimeframe:    viper.GetString("CRYPTO_TIMEFRAME"),
 		TradingInterval:    viper.GetString("TRADING_INTERVAL"),
 		CryptoLookbackDays: viper.GetInt("CRYPTO_LOOKBACK_DAYS"),
+		MaxOpenPosition:    viper.GetInt("MAX_OPEN_POSITION"),
 		// PositionSize removed - now uses LLM's position size recommendation
 
 		// Multi-timeframe analysis
@@ -297,6 +299,7 @@ func setDefaults() {
 
 	viper.SetDefault("CRYPTO_SYMBOL", "BTC/USDT")
 	viper.SetDefault("CRYPTO_TIMEFRAME", "1h")
+	viper.SetDefault("MAX_OPEN_POSITION", 0) // 单日最大开仓次数（0=不限制）/ Daily max open positions per day (0 = unlimited)
 	// POSITION_SIZE removed - now uses LLM's position size recommendation
 	// 移除 POSITION_SIZE - 现在使用 LLM 的仓位建议
 
