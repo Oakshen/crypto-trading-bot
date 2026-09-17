@@ -8,7 +8,7 @@
 
 使用大语言模型（LLM）分析市场数据、生成交易信号并在币安期货上执行交易。采用 **Cloudwego Eino 框架**进行多智能体并行编排。
 
-![Trading Bot Dashboard](assets/fig7.png)
+![Crypto-Trading-Bot 监控面板](assets/dashboard.png)
 
 > ⚠️ **重要提示**：此项目从 Python 完全重构为 Go 版本，性能更高、并发能力更强。
 
@@ -42,6 +42,39 @@
 - 涨到 70000：止损移至 68250（+10%）
 - 涨到 73000：止损移至 71175（+14.8%）
 - 回调到 71000：触发止损，获利 9000 USDT
+
+## 2026-09 更新说明
+
+### 币安 API：适配 2025-12 条件单迁移
+
+币安自 2025-12-09 起把条件单（`STOP_MARKET` / `TAKE_PROFIT_MARKET` 等）迁移到独立的
+Algo Order 接口，旧接口对这些类型直接返回 `-4120`。本次更新同步修正了几处会导致
+**下单失败或数据错误**的问题：
+
+- **K 线数据不再滞后**：`/fapi/v1/klines` 传入 `startTime` 时返回的是「最早」的 1000 根。
+  README 推荐的 `3m` + `CRYPTO_LOOKBACK_DAYS=3` 需要 1440 根，导致返回数据停在约
+  **22 小时之前**，LLM 看到的全部技术指标都是过期价格。现已收敛请求窗口。
+- **`reduceOnly` 方向修正**：此前只在双向持仓模式发送，而币安恰恰禁止在该模式下发送它。
+  现改为在单向持仓模式发送——那里才是防止平仓变反手开仓的地方。
+- **止损单支持双向持仓**：此前 Algo 止损单固定发送 `reduceOnly` 且从不发送
+  `positionSide`，在双向持仓账户上必然以 `-1106` / `-4061` 失败。
+- **价格与数量按 `exchangeInfo` 格式化**：取代固定的 `%.2f` / `%.4f`。旧写法在
+  BTCUSDT（tickSize 0.1）上会被直接拒单，在低价币上则会悄悄改变止损位
+  （DOGE `0.12345` → `0.12`，偏移 2.8%）。同时移除了硬编码的十币种精度表。
+- 账户与持仓接口迁移到 `/fapi/v3/*`，杠杆与保证金模式改由 `/fapi/v1/symbolConfig` 提供。
+- 新增服务器时间同步，避免长期运行后因时钟漂移触发 `-1021`。
+
+### 监控面板重构
+
+面板按「**我赚了吗 → 我有什么敞口 → 它守纪律吗**」重新组织：
+
+- **观望决策不再被隐藏**。此前面板只显示已执行的交易，而「极致的选择性」恰恰是本策略的
+  核心——把观望隐藏起来，等于把最重要的证据删掉了。每条决策现在直接显示 LLM 自己给出的理由。
+- **新增交易纪律面板**：出手率（每个决策一个标记，可一眼看出出手/观望的节奏）、
+  **盈亏比**、胜率、已实现盈亏，全部由已平仓记录计算。
+- **持仓显示距离止损的空间**，低于 1.5% 时进入警示状态。
+- **资产曲线改为单坐标轴**，并在起始资金处画基准线（此前把权益与未实现盈亏画在两个
+  不同的 y 轴上，交点没有意义）。
 
 ## 2025-12-12 更新说明
 DeepSeek-3.2正式版更新后，开仓意愿大幅增加，请使用新版 prompts/trader_json_no_trailing_stop.txt ，增加了多时间指标和多时间周期分析，开仓意愿会下降一点。
@@ -268,12 +301,25 @@ CRYPTO_SYMBOLS=BTC/USDT,ETH/USDT,SOL/USDT
 
 ### 5. 查看实时数据
 
+启动 `make run-web` 后访问 `http://localhost:8080`（用户名密码见 `.env` 中的
+`WEB_USERNAME` / `WEB_PASSWORD`）。面板分三块：
+
+| 区块 | 内容 |
+|------|------|
+| **账户权益** | 当前权益、相对起始资金的盈亏、资产曲线（含起始资金基准线） |
+| **当前持仓** | 方向、杠杆、开仓价与现价、未实现盈亏、**距离止损还剩多少空间** |
+| **决策记录 / 交易纪律** | 每一次决策（含观望）及其理由；出手率、盈亏比、胜率、已实现盈亏 |
+
 ```bash
 # Web API 端点
 curl http://localhost:8080/api/balance/current    # 实时余额
 curl http://localhost:8080/api/balance/history    # 余额历史
 curl http://localhost:8080/api/positions          # 当前持仓
+curl http://localhost:8080/api/performance        # 出手率 / 盈亏比 / 胜率
 ```
+
+> 只想看界面、不想连币安和 LLM？用 `make run-ui`。它会用示例数据启动同一套页面，
+> 不需要任何 API Key，**也不会下任何单**。
 
 ---
 
@@ -284,6 +330,7 @@ crypto-trading-bot/
 ├── cmd/
 │   ├── main.go           # 单次执行模式入口
 │   ├── web/main.go       # Web 监控模式入口
+│   ├── uipreview/main.go # 界面预览（示例数据，不下单）
 │   └── query/main.go     # 数据查询工具
 ├── internal/
 │   ├── agents/           # AI 智能体（Eino Graph 工作流）
@@ -292,7 +339,7 @@ crypto-trading-bot/
 │   ├── portfolio/        # 投资组合管理
 │   ├── storage/          # SQLite 数据库
 │   ├── scheduler/        # 时间调度器
-│   ├── web/              # Web 服务器和模板
+│   ├── web/              # Web 服务器、模板与样式
 │   ├── config/           # 配置加载
 │   └── logger/           # 日志系统
 ├── prompts/              # 外部 Prompt 文件
@@ -363,7 +410,8 @@ make clean        # 清理编译产物
 
 # 运行
 make run          # 单次执行
-make run-web      # Web 监控模式
+make run-web      # Web 监控模式（实盘/测试网）
+make run-ui       # 界面预览：示例数据，无需 API Key，不会下单
 
 # 查询
 make query ARGS="stats"                 # 统计信息
