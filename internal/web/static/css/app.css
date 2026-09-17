@@ -1,1231 +1,863 @@
 /* =========================================================================
-   Crypto-Trading-Bot — Design System
-   加密货币交易机器人 — 设计系统
-   Single stylesheet shared by dashboard / session detail / trade history / login
-   仪表盘 / 会话详情 / 交易历史 / 登录页共用的单一样式表
+   Crypto-Trading-Bot — "Inverted amber terminal"
+   加密货币交易机器人 — 「反相琥珀终端」
+
+   Finance terminals were amber phosphor on black. Inverted — dark ink on pale
+   amber paper — it reads as a ruled trading ledger, which is where this
+   interface's pale yellow comes from rather than a generic cream.
+   金融终端曾是黑底琥珀磷光。将其反相——浅琥珀纸上的深色墨水——
+   便呈现出带横线的交易账簿质感，这正是本界面浅黄色的由来，
+   而非一般意义上的米白。
    ========================================================================= */
 
 /* -------------------------------------------------------------------------
-   1. Design tokens / 设计令牌
+   1. Tokens / 设计令牌
    ------------------------------------------------------------------------- */
 :root {
-    color-scheme: dark;
+    /* Paper — pale amber, deliberately chromatic so it reads yellow, not cream
+       纸面——浅琥珀色，刻意保留彩度，使其读起来是黄色而非米白 */
+    --paper:      #FAF3D2;
+    --paper-2:    #F5EBBF;
+    --paper-3:    #EFE2A8;
+    --paper-edge: #FDF9E6;
 
-    /* Surfaces / 背景层级 */
-    --bg:            #080A0F;
-    --bg-elev-0:     #0D1017;
-    --bg-elev-1:     #12161F;
-    --bg-elev-2:     #171C27;
-    --bg-elev-3:     #1E2432;
-    --bg-input:      #0E121A;
+    /* Rules — a ledger is ruled, so hairlines carry structure here
+       横线——账簿本就有横线，因此细线在此承担结构作用 */
+    --rule:      #DCCB8E;
+    --rule-soft: #E8DCAE;
+    --rule-firm: #C9B466;
 
-    /* Borders / 边框 */
-    --border:        rgba(255, 255, 255, 0.07);
-    --border-strong: rgba(255, 255, 255, 0.13);
-    --border-accent: rgba(79, 124, 255, 0.45);
+    /* Ink — warm olive-black, not a tinted grey
+       墨色——暖调橄榄黑，而非染色的灰黑 */
+    --ink:   #2B2405;
+    --ink-2: #5C5324;
+    --ink-3: #8A7F4A;
+    --ink-4: #A99E6B;
 
-    /* Text / 文字 */
-    --text:          #E8ECF4;
-    --text-soft:     #B6BFD0;
-    --text-muted:    #8A93A6;
-    --text-faint:    #5F6879;
+    /* Data — gain/loss must survive red-green colour blindness, so the pair is
+       blue/red rather than the conventional green/red: no green/red pair clears
+       deuteranopia (best measured ΔE 6.1, below the usable floor), and on a
+       trading dashboard mistaking profit for loss is the worst failure there is.
+       数据色——盈亏配色必须能被红绿色盲区分，因此采用蓝/红而非惯常的绿/红：
+       任何绿/红组合都无法通过红绿色盲检验（实测最佳 ΔE 仅 6.1，低于可用下限），
+       而在交易面板上，把盈利误读为亏损是最严重的失败。
+       The sign (+/−) is always rendered, so colour is never the only channel.
+       正负号始终显示，因此颜色永远不是唯一的信息通道。 */
+    --gain:      #1D5C8F;
+    --gain-wash: rgba(29, 92, 143, 0.10);
+    --loss:      #A81E12;
+    --loss-wash: rgba(168, 30, 18, 0.10);
 
-    /* Brand & semantic / 品牌与语义色 */
-    --accent:        #4F7CFF;
-    --accent-hover:  #6B90FF;
-    --accent-soft:   rgba(79, 124, 255, 0.14);
-    --cyan:          #22D3EE;
+    /* Hold is the absence of action: muted, never coloured
+       观望代表不行动：一律弱化，不着色 */
+    --hold: #8A7F4A;
 
-    --long:          #0ECB81;   /* 多头 / 盈利 */
-    --long-soft:     rgba(14, 203, 129, 0.14);
-    --short:         #F6465D;   /* 空头 / 亏损 */
-    --short-soft:    rgba(246, 70, 93, 0.14);
-    --warn:          #F0B90B;
-    --warn-soft:     rgba(240, 185, 11, 0.14);
-    --neutral:       #7A8496;
-    --neutral-soft:  rgba(122, 132, 150, 0.16);
+    --radius:   10px;
+    --radius-s: 6px;
 
-    /* Radii / 圆角 */
-    --r-xs: 6px;
-    --r-sm: 9px;
-    --r-md: 13px;
-    --r-lg: 18px;
-    --r-xl: 24px;
-    --r-pill: 999px;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --fast: 120ms var(--ease);
 
-    /* Shadows / 阴影 */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 18px 48px -12px rgba(0, 0, 0, 0.65);
-    --shadow-glow: 0 0 0 1px var(--border-accent), 0 8px 28px -8px rgba(79, 124, 255, 0.45);
-
-    /* Motion / 动效 */
-    --ease: cubic-bezier(0.22, 1, 0.36, 1);
-    --fast: 140ms var(--ease);
-    --base: 220ms var(--ease);
-
-    /* Typography / 字体 */
-    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
-                 Menlo, Consolas, "Liberation Mono", monospace;
+    /* One family. Weight and width carry the hierarchy.
+       仅用一个字族，由字重与字宽承担层级。 */
+    --font: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+            "Microsoft YaHei", sans-serif;
 }
 
 /* -------------------------------------------------------------------------
-   2. Reset & base / 重置与基础样式
+   2. Base / 基础
    ------------------------------------------------------------------------- */
-*,
-*::before,
-*::after { margin: 0; padding: 0; box-sizing: border-box; }
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* No overflow-x:hidden here on purpose: it makes the root a scroll container
-   and silently breaks position:sticky on the table headers. The overflow this
-   was guarding against is fixed properly at its source (grid minmax(0,1fr) and
-   the positions table scrolling inside its own card).
-   此处刻意不使用 overflow-x:hidden：它会让根元素成为滚动容器，
-   并悄悄破坏表头的 position:sticky。原本要兜底的横向溢出问题
-   已在根源处修复（网格使用 minmax(0,1fr)，持仓表在自身卡片内滚动）。 */
 html { -webkit-text-size-adjust: 100%; }
 
 body {
-    font-family: var(--font-sans);
-    font-size: 14px;
+    font-family: var(--font);
+    font-size: 15px;
     line-height: 1.6;
-    color: var(--text);
-    background-color: var(--bg);
-    /* Ambient gradient glow / 环境渐变光晕 */
-    background-image:
-        radial-gradient(900px 500px at 12% -8%,  rgba(79, 124, 255, 0.10), transparent 60%),
-        radial-gradient(760px 460px at 92% 4%,   rgba(34, 211, 238, 0.07), transparent 62%),
-        radial-gradient(1100px 700px at 50% 110%, rgba(14, 203, 129, 0.05), transparent 60%);
-    background-attachment: fixed;
-    min-height: 100vh;
+    color: var(--ink);
+    background: var(--paper);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-variant-numeric: tabular-nums;
+    min-height: 100vh;
 }
 
-a { color: var(--accent); text-decoration: none; transition: color var(--fast); }
-a:hover { color: var(--accent-hover); }
+a { color: var(--ink); text-decoration: none; }
 
-button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+button, input, select { font-family: inherit; font-size: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
 
-h1, h2, h3, h4 { font-weight: 650; letter-spacing: -0.015em; line-height: 1.3; }
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.012em; line-height: 1.25; }
 
 :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--gain);
     outline-offset: 2px;
-    border-radius: var(--r-xs);
+    border-radius: 3px;
 }
 
-/* Scrollbars / 滚动条 */
-* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
-*::-webkit-scrollbar { width: 9px; height: 9px; }
+::selection { background: rgba(29, 92, 143, 0.18); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--rule-firm) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.13);
-    border-radius: var(--r-pill);
-    border: 2px solid transparent;
-    background-clip: content-box;
+    background: var(--rule-firm);
+    border: 3px solid var(--paper);
+    border-radius: 99px;
 }
-*::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); background-clip: content-box; }
 
-/* -------------------------------------------------------------------------
-   3. Layout / 布局
-   ------------------------------------------------------------------------- */
+/* Numerals: proportional for display figures, tabular only inside columns
+   数字：展示型数值用比例字形，仅在表格列中使用等宽字形 */
+table, .num-col, .tape-time, .meter-value { font-variant-numeric: tabular-nums; }
+
 .container {
     width: 100%;
-    max-width: 1760px;
+    max-width: 1440px;
     margin: 0 auto;
-    padding: 22px;
-}
-
-/* Shared surface treatment / 通用卡片表面 */
-.surface,
-header,
-.header,
-.left-panel,
-.right-panel,
-.positions-container,
-.balance-chart-container,
-.tabs-container,
-.content,
-.trade-batch,
-.login-container {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
-                var(--bg-elev-1);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-md);
+    padding: 0 28px 56px;
 }
 
 /* -------------------------------------------------------------------------
-   4. Page header / 页面头部
+   3. Masthead / 页眉
+   Thin and quiet: it is signage, not content.
+   克制的细条：它是标识，不是内容。
    ------------------------------------------------------------------------- */
-header,
-.header {
-    position: relative;
-    padding: 20px 24px;
-    margin-bottom: 18px;
-    overflow: hidden;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-}
-
-/* Accent hairline on top edge / 顶部高光细线 */
-header::before,
-.header::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent), var(--cyan), transparent);
-    opacity: 0.55;
-}
-
-.header-title,
-.header-top {
+.masthead {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 18px 0 14px;
+    border-bottom: 1px solid var(--rule-firm);
+    margin-bottom: 28px;
+}
+
+.wordmark {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+}
+
+.masthead-pairs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.pair-chip {
+    padding: 2px 9px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 99px;
+}
+
+.masthead-meta {
+    display: flex;
+    align-items: baseline;
     gap: 14px;
     flex-wrap: wrap;
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--ink-3);
 }
 
-.header-title { margin-bottom: 18px; }
+.masthead-meta b { color: var(--ink-2); font-weight: 600; }
 
-.header {
-    display: flex;
+/* Live/test state reads from a dot plus a word, never colour alone
+   运行状态由圆点加文字共同表达，不依赖颜色 */
+.state {
+    display: inline-flex;
     align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.state::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ink-3);
+}
+.state-live::before { background: var(--loss); }
+.state-test::before { background: var(--gain); }
+
+.masthead-actions { display: flex; gap: 8px; }
+
+/* -------------------------------------------------------------------------
+   4. Buttons / 按钮
+   ------------------------------------------------------------------------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--paper-2);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius-s);
+    transition: background var(--fast), border-color var(--fast);
+}
+.btn:hover { background: var(--paper-3); }
+
+.btn-primary {
+    color: var(--paper-edge);
+    background: var(--ink);
+    border-color: var(--ink);
+}
+.btn-primary:hover { background: #3b3209; }
+
+.btn-quiet { background: transparent; border-color: transparent; color: var(--ink-3); }
+.btn-quiet:hover { color: var(--ink); background: var(--paper-2); }
+
+/* -------------------------------------------------------------------------
+   5. Section headings / 区块标题
+   Sentence case, no tracked-out caps, no eyebrow labels.
+   句首大写，不使用拉开字距的全大写，也不加装饰性标签。
+   ------------------------------------------------------------------------- */
+.section {
+    margin-bottom: 34px;
+}
+
+.section-head {
+    display: flex;
+    align-items: baseline;
     justify-content: space-between;
     gap: 16px;
     flex-wrap: wrap;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--rule);
 }
-.header .header-top { width: 100%; }
 
-.header-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-
-h1 {
-    font-size: 1.35rem;
+.section-head h2 {
+    font-size: 15px;
     font-weight: 700;
-    color: var(--text);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    letter-spacing: -0.02em;
+    color: var(--ink);
 }
 
-.header-actions { display: flex; gap: 10px; margin-left: auto; }
-
-/* Status strip / 状态栏 */
-.status-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px 22px;
-    flex-wrap: wrap;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-}
-
-.status-label {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-}
-
-.time-info {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    font-family: var(--font-mono);
-}
-
-.countdown {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: var(--cyan);
-    background: rgba(34, 211, 238, 0.10);
-    border: 1px solid rgba(34, 211, 238, 0.28);
-    padding: 3px 10px;
-    border-radius: var(--r-sm);
-    letter-spacing: 0.06em;
-}
+.section-note { font-size: 13px; color: var(--ink-3); }
 
 /* -------------------------------------------------------------------------
-   5. Buttons / 按钮
+   6. Equity band — the one bold element
+   资产区 —— 全页唯一的强视觉元素
+   The number and its curve are one object, not a figure and a separate card.
+   数值与曲线是同一个对象，而非一个数字加一张独立卡片。
    ------------------------------------------------------------------------- */
-.btn,
-.settings-btn,
-.logout-btn,
-.back-button,
-.view-all-button,
-.login-button,
-.symbol-pill,
-.time-range-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    font-weight: 600;
-    border-radius: var(--r-sm);
-    transition: transform var(--fast), background var(--fast),
-                border-color var(--fast), box-shadow var(--fast), color var(--fast);
-    white-space: nowrap;
-    user-select: none;
-}
-
-.btn,
-.settings-btn,
-.logout-btn,
-.back-button {
-    padding: 8px 16px;
-    font-size: 0.82rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg-elev-2);
-    color: var(--text-soft);
-}
-
-.btn:hover,
-.settings-btn:hover,
-.back-button:hover {
-    background: var(--bg-elev-3);
-    border-color: var(--border-accent);
-    color: var(--text);
-    transform: translateY(-1px);
-}
-
-.btn:active,
-.settings-btn:active,
-.logout-btn:active,
-.back-button:active { transform: translateY(0); }
-
-.btn-primary {
-    background: var(--accent);
-    border-color: transparent;
-    color: #fff;
-}
-.btn-primary:hover { background: var(--accent-hover); box-shadow: 0 6px 20px -6px rgba(79, 124, 255, 0.7); }
-
-.btn-success {
-    background: var(--long);
-    border-color: transparent;
-    color: #04271A;
-}
-.btn-success:hover { filter: brightness(1.08); box-shadow: 0 6px 20px -6px rgba(14, 203, 129, 0.6); }
-
-.btn-secondary {
-    background: transparent;
-    border-color: var(--border-strong);
-    color: var(--text-muted);
-}
-.btn-secondary:hover { color: var(--text); background: var(--bg-elev-2); }
-
-.logout-btn {
-    color: var(--short);
-    border-color: rgba(246, 70, 93, 0.3);
-    background: var(--short-soft);
-}
-.logout-btn:hover {
-    background: rgba(246, 70, 93, 0.2);
-    border-color: var(--short);
-    color: #fff;
-    transform: translateY(-1px);
-}
-
-.view-all-button {
-    width: 100%;
-    padding: 11px 18px;
-    font-size: 0.85rem;
-    color: var(--text-soft);
-    background: var(--bg-elev-2);
-    border: 1px dashed var(--border-strong);
-}
-.view-all-button:hover {
-    color: var(--text);
-    border-color: var(--accent);
-    border-style: solid;
-    background: var(--accent-soft);
-}
-
-/* Symbol pills / 交易对药丸 */
-.symbol-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-
-.symbol-pill {
-    padding: 5px 14px;
-    font-size: 0.78rem;
-    font-family: var(--font-mono);
-    letter-spacing: 0.02em;
-    border-radius: var(--r-pill);
-    color: var(--text);
-    background: var(--accent-soft);
-    border: 1px solid var(--border-accent);
-}
-.symbol-pill:hover {
-    background: rgba(79, 124, 255, 0.24);
-    transform: translateY(-1px);
-    box-shadow: 0 5px 16px -6px rgba(79, 124, 255, 0.7);
-}
-
-/* Time-range segmented control / 时间范围分段控件 */
-.time-range-selector {
-    display: inline-flex;
-    gap: 2px;
-    padding: 3px;
-    background: var(--bg-elev-0);
-    border: 1px solid var(--border);
-    border-radius: var(--r-sm);
-}
-
-.time-range-btn {
-    padding: 5px 13px;
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    border-radius: var(--r-xs);
-    background: transparent;
-}
-.time-range-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
-.time-range-btn.active {
-    color: #fff;
-    background: var(--accent);
-    box-shadow: 0 2px 10px -3px rgba(79, 124, 255, 0.8);
-}
-
-/* -------------------------------------------------------------------------
-   6. Badges / 徽标
-   ------------------------------------------------------------------------- */
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    font-size: 0.74rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    border-radius: var(--r-pill);
-    border: 1px solid transparent;
-    white-space: nowrap;
-}
-
-.badge-blue,
-.badge-info    { background: var(--accent-soft);  color: #9BB6FF; border-color: rgba(79, 124, 255, 0.3); }
-.badge-green,
-.badge-success { background: var(--long-soft);    color: #4BE0A8; border-color: rgba(14, 203, 129, 0.3); }
-.badge-red     { background: var(--short-soft);   color: #FF8296; border-color: rgba(246, 70, 93, 0.3); }
-.badge-orange,
-.badge-warning { background: var(--warn-soft);    color: #F5CB4B; border-color: rgba(240, 185, 11, 0.3); }
-.badge-gray    { background: var(--neutral-soft); color: var(--text-muted); border-color: var(--border-strong); }
-
-/* Action badges — trade direction / 交易动作徽标 */
-.action-badge,
-.trade-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 11px;
-    font-size: 0.73rem;
-    font-weight: 700;
-    font-family: var(--font-mono);
-    letter-spacing: 0.04em;
-    border-radius: var(--r-xs);
-    border: 1px solid transparent;
-    white-space: nowrap;
-}
-
-.action-buy          { background: var(--long-soft);    color: #4BE0A8; border-color: rgba(14, 203, 129, 0.32); }
-.action-sell         { background: var(--short-soft);   color: #FF8296; border-color: rgba(246, 70, 93, 0.32); }
-.action-close        { background: var(--accent-soft);  color: #9BB6FF; border-color: rgba(79, 124, 255, 0.32); }
-.action-hold         { background: var(--warn-soft);    color: #F5CB4B; border-color: rgba(240, 185, 11, 0.32); }
-.action-unknown,
-.action-no-decision  { background: var(--neutral-soft) !important;
-                       color: var(--text-muted) !important;
-                       border-color: var(--border-strong); }
-
-/* -------------------------------------------------------------------------
-   7. Dashboard grid / 仪表盘网格
-   ------------------------------------------------------------------------- */
-.main-content {
+.equity {
     display: grid;
-    /* minmax(0, ...) on both tracks: a bare "1fr" means minmax(auto, 1fr), whose
-       auto floor is the content's min-content width. The monospace batch
-       timestamps floored the left column at 490px and pushed the whole page
-       into horizontal overflow on phones.
-       两条轨道都使用 minmax(0, ...)：单写 "1fr" 等价于 minmax(auto, 1fr)，
-       其 auto 下限为内容的 min-content 宽度。等宽字体的批次时间把左栏撑到 490px，
-       导致整个页面在手机上横向溢出。 */
-    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    gap: 32px;
+    align-items: end;
+    padding: 4px 0 24px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 34px;
+}
+
+.equity-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-3);
+    margin-bottom: 2px;
+}
+
+.equity-value {
+    font-size: clamp(46px, 6.4vw, 78px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 0.95;
+    color: var(--ink);
+}
+
+.equity-delta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.equity-delta .since { font-size: 13px; font-weight: 400; color: var(--ink-3); }
+
+.up   { color: var(--gain); }
+.down { color: var(--loss); }
+.flat { color: var(--ink-3); }
+
+.equity-chart { position: relative; min-height: 190px; }
+.equity-chart canvas { display: block; }
+
+.range {
+    display: flex;
+    gap: 2px;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.range button {
+    padding: 4px 11px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-3);
+    border-radius: var(--radius-s);
+    transition: color var(--fast), background var(--fast);
+}
+.range button:hover { color: var(--ink); background: var(--paper-2); }
+.range button.active { color: var(--paper-edge); background: var(--ink); }
+
+/* -------------------------------------------------------------------------
+   7. Positions — risk, with distance to stop
+   持仓 —— 风险，含距离止损的远近
+   ------------------------------------------------------------------------- */
+.positions { display: flex; flex-direction: column; gap: 2px; }
+
+.position {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
     gap: 18px;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+}
+
+.position-id { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+
+.position-symbol { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+
+/* Direction is a word first; the colour only reinforces it
+   方向首先由文字表达，颜色只作强化 */
+.side {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 3px;
+}
+.side-long  { color: var(--gain); background: var(--gain-wash); }
+.side-short { color: var(--loss); background: var(--loss-wash); }
+
+.field-label { font-size: 12px; color: var(--ink-3); margin-bottom: 1px; }
+.field-value { font-size: 14.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Stop meter: the fill is how much room is left before the stop triggers.
+   止损计量条：填充部分表示触发止损前还剩多少空间。
+   Track is a lighter step of the same ink so state reads across the whole bar.
+   轨道使用同色系更浅的一档，使状态在整条上都可读。 */
+.stop-meter { display: flex; flex-direction: column; gap: 5px; }
+
+.meter-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--ink-3);
+}
+.meter-value { font-weight: 600; color: var(--ink-2); }
+
+.meter-track {
+    position: relative;
+    height: 6px;
+    background: var(--paper-3);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 99px;
+    background: var(--gain);
+}
+/* Close to the stop is a warning state, so it changes hue and says so in text
+   接近止损属于警示状态，因此同时改变色相并以文字说明 */
+.meter-fill.near { background: var(--loss); }
+
+/* -------------------------------------------------------------------------
+   8. Decision tape — the spine of the page
+   决策带 —— 页面的主干
+   Holds are shown, quietly. Hiding them hides the selectivity that is the
+   entire point of the strategy.
+   观望决策会被显示，只是弱化。隐藏它们等于隐藏了该策略的全部要义。
+   ------------------------------------------------------------------------- */
+.split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 34px;
     align-items: start;
 }
 
-.left-panel {
-    display: flex;
-    flex-direction: column;
-    padding: 18px;
-    height: calc(100vh - 210px);
-    min-height: 520px;
-    min-width: 0; /* 允许在网格中收缩 / allow shrinking inside the grid */
+.tape { display: flex; flex-direction: column; }
+
+.tape-batch {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule-soft);
+}
+.tape-batch:last-child { border-bottom: none; }
+
+.tape-time {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-3);
+    padding-top: 2px;
 }
 
-.right-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    background: none;
-    border: none;
-    box-shadow: none;
-    height: calc(100vh - 210px);
-    min-height: 520px;
-    min-width: 0; /* 允许在网格中收缩 / allow shrinking inside the grid */
-}
+.tape-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
-.panel-title {
-    font-size: 0.82rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-    padding-bottom: 12px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.panel-title::before {
-    content: "";
-    width: 3px;
-    height: 13px;
-    border-radius: var(--r-pill);
-    background: linear-gradient(180deg, var(--accent), var(--cyan));
-}
-
-/* -------------------------------------------------------------------------
-   8. Trade history list (dashboard) / 交易历史列表（仪表盘）
-   ------------------------------------------------------------------------- */
-.trade-batch {
-    padding: 0;
-    margin-bottom: 12px;
-    overflow: hidden;
-    background: var(--bg-elev-0);
-    border-radius: var(--r-md);
-    box-shadow: none;
-}
-
-.trade-batch-time,
-.batch-header {
-    padding: 8px 14px;
-    font-size: 0.72rem;
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    background: rgba(255, 255, 255, 0.025);
-    border-bottom: 1px solid var(--border);
-    letter-spacing: 0.02em;
-    overflow-wrap: anywhere; /* 长时间戳换行而非撑宽容器 / wrap long timestamps instead of widening */
-}
-.batch-header strong { color: var(--text-soft); font-weight: 600; }
-
-.trade-history-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+.tape-row {
+    display: grid;
+    grid-template-columns: 92px 72px minmax(0, 1fr);
     gap: 12px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
+    align-items: baseline;
+    padding: 5px 8px;
+    margin: 0 -8px;
+    border-radius: var(--radius-s);
     cursor: pointer;
-    border-bottom: 1px solid var(--border);
-    transition: background var(--fast), padding-left var(--fast);
+    transition: background var(--fast);
 }
-.trade-history-item:last-child { border-bottom: none; }
-.trade-history-item:hover {
-    background: var(--accent-soft);
-    padding-left: 18px;
-}
+.tape-row:hover { background: var(--paper-2); }
 
-.trade-symbol {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 0.82rem;
-    color: var(--text);
-    min-width: 0;
-}
+.tape-symbol { font-size: 14px; font-weight: 600; }
 
-.trade-time { color: var(--text-faint); font-size: 0.74rem; font-family: var(--font-mono); }
+.verdict { font-size: 13px; font-weight: 700; }
+.verdict-buy   { color: var(--gain); }
+.verdict-sell  { color: var(--loss); }
+.verdict-close { color: var(--ink-2); }
+.verdict-hold  { color: var(--hold); font-weight: 500; }
 
-/* -------------------------------------------------------------------------
-   9. Tables / 表格
-   ------------------------------------------------------------------------- */
-.positions-container {
-    padding: 18px;
-    flex-shrink: 0;
-    min-width: 0;
-}
-
-/* The positions table has seven columns and cannot fit a phone width, so it
-   scrolls inside its own card rather than widening the page.
-   持仓表有七列，无法在手机宽度下完整显示，
-   因此让它在自己的卡片内横向滚动，而不是撑宽整个页面。 */
-.positions-container .positions-table-scroll {
-    overflow-x: auto;
-    margin: 0 -18px;
-    padding: 0 18px;
-}
-
-.positions-table,
-.table-container table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    font-size: 0.82rem;
-}
-
-/* Deliberately not position:sticky. Both tables live inside a card that sets
-   overflow:hidden for its rounded corners, which confines a sticky header to
-   that card and makes it scroll away regardless. Neither table scrolls
-   vertically either (batch tables are a few rows), so a sticky header has
-   nothing to stick to.
-   这里刻意不使用 position:sticky。两张表都位于为实现圆角而设置
-   overflow:hidden 的卡片内，这会把 sticky 表头限制在该卡片中，
-   使其无论如何都会随页面滚走。并且两张表都不会垂直滚动
-   （批次表只有几行），sticky 表头没有可吸附的对象。 */
-.positions-table thead th,
-.table-container thead th {
-    padding: 9px 13px;
-    text-align: left;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-faint);
-    background: var(--bg-elev-2);
-    border-bottom: 1px solid var(--border);
+.tape-reason {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
-.positions-table thead th:first-child,
-.table-container thead th:first-child { border-radius: var(--r-xs) 0 0 0; }
-.positions-table thead th:last-child,
-.table-container thead th:last-child { border-radius: 0 var(--r-xs) 0 0; }
 
-.positions-table td,
-.table-container td {
-    padding: 11px 13px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-soft);
-    font-variant-numeric: tabular-nums;
-}
-.positions-table tr:last-child td,
-.table-container tr:last-child td { border-bottom: none; }
-
-.positions-table tbody tr,
-.table-container tbody tr { transition: background var(--fast); }
-.positions-table tbody tr:hover,
-.table-container tbody tr:hover { background: rgba(255, 255, 255, 0.035); }
-
-/* PnL colouring / 盈亏配色 */
-.profit-positive { color: var(--long) !important;  font-weight: 650; }
-.profit-negative { color: var(--short) !important; font-weight: 650; }
-.side-long       { color: var(--long) !important;  font-weight: 650; }
-.side-short      { color: var(--short) !important; font-weight: 650; }
+/* A held decision recedes; an acted one keeps full ink
+   观望的决策后退；已执行的保持完整墨色 */
+.tape-row.held .tape-symbol { font-weight: 500; color: var(--ink-3); }
 
 /* -------------------------------------------------------------------------
-   10. Balance chart card / 资产曲线卡片
+   9. Discipline panel — how the bot behaved
+   纪律面板 —— 机器人的行为表现
    ------------------------------------------------------------------------- */
-.balance-chart-container {
-    padding: 18px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 300px;
-}
-
-.chart-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    flex-wrap: wrap;
-    margin-bottom: 6px;
-}
-
-.chart-title { display: flex; align-items: center; gap: 12px; }
-.chart-title h2 {
-    font-size: 0.82rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-}
-
-.currency-selector {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    font-size: 0.76rem;
-    border-radius: var(--r-pill);
-    background: var(--bg-elev-0);
-    border: 1px solid var(--border);
-    color: var(--text-soft);
-    cursor: pointer;
-    transition: border-color var(--fast);
-}
-.currency-selector:hover { border-color: var(--border-strong); }
-
-.currency-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 17px;
-    height: 17px;
-    border-radius: 50%;
-    background: var(--long);
-    color: #04271A;
-    font-size: 0.7rem;
-    font-weight: 800;
-}
-
-.balance-display { margin: 10px 0 6px; }
-
-.balance-amount {
-    font-family: var(--font-mono);
-    font-size: 2rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--text);
-    line-height: 1.2;
-    text-shadow: 0 0 34px rgba(79, 124, 255, 0.28);
-}
-
-.chart-wrapper { position: relative; flex: 1; min-height: 200px; }
-
-/* -------------------------------------------------------------------------
-   11. Empty & loading states / 空状态与加载中
-   ------------------------------------------------------------------------- */
-.no-data,
-.empty-state,
-.empty-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 46px 20px;
-    color: var(--text-faint);
-    font-size: 0.85rem;
-    text-align: center;
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--r-md);
-    background: rgba(255, 255, 255, 0.015);
-}
-
-.loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 56px 20px;
-    color: var(--text-muted);
-    font-size: 0.85rem;
-}
-
-.spinner {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: 2.5px solid var(--border-strong);
-    border-top-color: var(--accent);
-    animation: spin 720ms linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* -------------------------------------------------------------------------
-   12. Modal / 模态框
-   ------------------------------------------------------------------------- */
-.modal {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    display: none;
-    align-items: center;
-    justify-content: center;
+.discipline {
     padding: 20px;
-    background: rgba(4, 6, 10, 0.72);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
 }
-.modal.active { display: flex; animation: fade-in 180ms var(--ease); }
 
-.modal-content {
-    width: 100%;
-    max-width: 520px;
-    background: var(--bg-elev-1);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-lg);
+.stat { padding: 14px 0; border-bottom: 1px solid var(--rule-soft); }
+.stat:first-child { padding-top: 0; }
+.stat:last-child { padding-bottom: 0; border-bottom: none; }
+
+.stat-label { font-size: 13px; color: var(--ink-3); margin-bottom: 3px; }
+
+.stat-value {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+}
+
+.stat-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+
+/* Selectivity tape: one mark per decision — filled when acted on, hollow when
+   held. A row of marks shows the trade/hold rhythm at a glance, which a
+   percentage alone cannot.
+   选择性带：每个决策一个标记——已执行为实心，观望为空心。
+   一排标记可一眼看出出手与观望的节奏，这是单一百分比无法表达的。 */
+.tally {
+    display: flex;
+    gap: 3px;
+    margin-top: 10px;
+}
+
+/* Marks share the row rather than wrapping, so the trade/hold rhythm stays one
+   readable band at any history length.
+   标记在同一行内平分宽度而非换行，使出手/观望的节奏在任意历史长度下
+   都保持为一条可读的带。 */
+.tally i {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 14px;
+    border-radius: 1.5px;
+    background: var(--paper-3);
+    box-shadow: inset 0 0 0 1px var(--rule-firm);
+}
+.tally i.acted { background: var(--ink); box-shadow: none; }
+
+/* -------------------------------------------------------------------------
+   10. Empty states — an invitation, not an apology
+   空状态 —— 是引导，而非致歉
+   ------------------------------------------------------------------------- */
+.empty {
+    padding: 26px 18px;
+    font-size: 14px;
+    color: var(--ink-3);
+    background: var(--paper-2);
+    border: 1px dashed var(--rule-firm);
+    border-radius: var(--radius);
+}
+.empty b { display: block; color: var(--ink-2); font-weight: 600; margin-bottom: 3px; }
+
+/* -------------------------------------------------------------------------
+   11. Tables (trade history) / 表格（交易历史）
+   ------------------------------------------------------------------------- */
+.batch {
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
     overflow: hidden;
-    animation: modal-in 240ms var(--ease);
+    margin-bottom: 14px;
+    background: var(--paper-2);
 }
 
-.modal-header {
-    padding: 18px 22px;
-    border-bottom: 1px solid var(--border);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
-}
-.modal-header h2 { font-size: 1rem; font-weight: 650; color: var(--text); }
-
-.modal-body { padding: 22px; }
-
-.modal-footer {
+.batch-head {
     display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 16px 22px;
-    border-top: 1px solid var(--border);
-    background: rgba(0, 0, 0, 0.2);
-}
-
-@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes modal-in {
-    from { opacity: 0; transform: translateY(14px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* -------------------------------------------------------------------------
-   13. Forms / 表单
-   ------------------------------------------------------------------------- */
-.form-group { margin-bottom: 18px; }
-.form-group:last-child { margin-bottom: 0; }
-
-.form-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.02em;
-}
-
-.form-group input,
-.form-group select,
-.page-size-selector select {
-    width: 100%;
-    padding: 10px 13px;
-    font-size: 0.85rem;
-    color: var(--text);
-    background: var(--bg-input);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-sm);
-    transition: border-color var(--fast), box-shadow var(--fast), background var(--fast);
-    appearance: none;
-}
-
-.form-group select,
-.page-size-selector select {
-    /* Chevron drawn inline so no extra asset is needed / 内联绘制箭头，无需额外资源 */
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238A93A6' stroke-width='1.6'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 11px center;
-    background-size: 15px;
-    padding-right: 34px;
-    cursor: pointer;
-}
-
-.form-group input:hover,
-.form-group select:hover,
-.page-size-selector select:hover { border-color: var(--border-accent); }
-
-.form-group input:focus,
-.form-group select:focus,
-.page-size-selector select:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.form-group select option,
-.page-size-selector select option { background: var(--bg-elev-2); color: var(--text); }
-
-/* -------------------------------------------------------------------------
-   14. Notifications / 通知提示
-   ------------------------------------------------------------------------- */
-.notification {
-    position: fixed;
-    top: 22px;
-    right: 22px;
-    z-index: 2000;
-    padding: 13px 18px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--text);
-    background: var(--bg-elev-2);
-    border: 1px solid var(--border-strong);
-    border-left-width: 3px;
-    border-radius: var(--r-sm);
-    box-shadow: var(--shadow-lg);
-    animation: toast-in 260ms var(--ease);
-}
-.notification-success { border-left-color: var(--long);  }
-.notification-error   { border-left-color: var(--short); }
-
-@keyframes toast-in {
-    from { opacity: 0; transform: translateX(22px); }
-    to   { opacity: 1; transform: translateX(0); }
-}
-
-/* -------------------------------------------------------------------------
-   15. Session detail — info & tabs / 会话详情 — 信息与标签页
-   ------------------------------------------------------------------------- */
-.session-info {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px 26px;
-    width: 100%;
-    padding-top: 16px;
-    margin-top: 16px;
-    border-top: 1px solid var(--border);
-}
-
-.info-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.82rem;
-    color: var(--text-soft);
-}
-.info-item strong {
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 0.78rem;
-}
-
-.tabs-container { overflow: hidden; }
-
-.tabs {
-    display: flex;
-    gap: 2px;
-    padding: 8px 8px 0;
-    overflow-x: auto;
-    background: rgba(0, 0, 0, 0.22);
-    border-bottom: 1px solid var(--border);
-}
-
-.tab {
-    position: relative;
-    padding: 10px 16px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    border-radius: var(--r-sm) var(--r-sm) 0 0;
-    white-space: nowrap;
-    transition: color var(--fast), background var(--fast);
-}
-.tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
-.tab.active { color: var(--text); background: var(--bg-elev-1); }
-.tab.active::after {
-    content: "";
-    position: absolute;
-    left: 14px;
-    right: 14px;
-    bottom: 0;
-    height: 2px;
-    border-radius: var(--r-pill);
-    background: linear-gradient(90deg, var(--accent), var(--cyan));
-}
-
-.tab-content { display: none; padding: 24px; }
-.tab-content.active { display: block; animation: fade-in 200ms var(--ease); }
-
-/* -------------------------------------------------------------------------
-   16. Rendered markdown reports / Markdown 报告渲染
-   ------------------------------------------------------------------------- */
-.report-content { color: var(--text-soft); font-size: 0.88rem; line-height: 1.75; }
-
-.report-content h1,
-.report-content h2,
-.report-content h3,
-.report-content h4 {
-    margin: 26px 0 12px;
-    color: var(--text);
-    letter-spacing: -0.01em;
-}
-.report-content h1 { font-size: 1.25rem; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
-.report-content h2 { font-size: 1.08rem; }
-.report-content h3 { font-size: 0.96rem; }
-.report-content h4 { font-size: 0.88rem; color: var(--text-soft); }
-.report-content > *:first-child { margin-top: 0; }
-
-.report-content p  { margin-bottom: 13px; }
-.report-content ul,
-.report-content ol { margin: 0 0 13px 22px; }
-.report-content li { margin-bottom: 6px; }
-.report-content strong { color: var(--text); font-weight: 650; }
-.report-content a { text-decoration: underline; text-underline-offset: 3px; }
-
-.report-content code {
-    padding: 2px 6px;
-    font-family: var(--font-mono);
-    font-size: 0.85em;
-    color: var(--cyan);
-    background: rgba(34, 211, 238, 0.1);
-    border: 1px solid rgba(34, 211, 238, 0.18);
-    border-radius: var(--r-xs);
-}
-
-.report-content pre {
-    margin: 0 0 16px;
-    padding: 15px 17px;
-    overflow-x: auto;
-    background: var(--bg-elev-0);
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-}
-.report-content pre code {
-    padding: 0;
-    color: var(--text-soft);
-    background: none;
-    border: none;
-    font-size: 0.83rem;
-    line-height: 1.7;
-}
-
-.report-content blockquote {
-    margin: 0 0 16px;
-    padding: 10px 16px;
-    color: var(--text-muted);
-    background: var(--accent-soft);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 var(--r-sm) var(--r-sm) 0;
-}
-
-.report-content table {
-    width: 100%;
-    margin-bottom: 16px;
-    border-collapse: separate;
-    border-spacing: 0;
-    font-size: 0.82rem;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    overflow: hidden;
-}
-.report-content table th {
-    padding: 9px 13px;
-    text-align: left;
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-faint);
-    background: var(--bg-elev-2);
-    border-bottom: 1px solid var(--border);
-}
-.report-content table td {
-    padding: 9px 13px;
-    border-bottom: 1px solid var(--border);
-    font-variant-numeric: tabular-nums;
-}
-.report-content table tr:last-child td { border-bottom: none; }
-.report-content table tr:hover td { background: rgba(255, 255, 255, 0.03); }
-
-/* -------------------------------------------------------------------------
-   17. Trade history page / 交易历史页面
-   ------------------------------------------------------------------------- */
-.content { padding: 18px; }
-
-.controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: baseline;
     gap: 14px;
     flex-wrap: wrap;
-    padding-bottom: 16px;
-    margin-bottom: 16px;
-    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--ink-3);
+    background: var(--paper-3);
+    border-bottom: 1px solid var(--rule);
 }
+.batch-head b { color: var(--ink-2); font-weight: 600; }
 
-.page-size-selector {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
-.page-size-selector select { width: auto; min-width: 118px; padding: 7px 32px 7px 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
-.stats { font-size: 0.8rem; color: var(--text-muted); }
-.stats strong { color: var(--text); font-weight: 650; font-family: var(--font-mono); }
-
-.table-container { display: flex; flex-direction: column; gap: 14px; }
-.table-container .trade-batch { margin-bottom: 0; border: 1px solid var(--border); }
-
-.session-link {
-    font-size: 0.78rem;
+thead th {
+    padding: 9px 16px;
+    text-align: left;
+    font-size: 12.5px;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
     white-space: nowrap;
-    transition: color var(--fast), letter-spacing var(--fast);
 }
-.session-link:hover { color: var(--accent-hover); letter-spacing: 0.02em; }
 
-/* Pagination / 分页 */
-.pagination {
+tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    color: var(--ink-2);
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--paper-3); }
+
+.link { font-weight: 600; color: var(--gain); }
+.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* -------------------------------------------------------------------------
+   12. Pagination / 分页
+   ------------------------------------------------------------------------- */
+.pager {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 5px;
     flex-wrap: wrap;
-    padding-top: 20px;
-    margin-top: 20px;
-    border-top: 1px solid var(--border);
+    padding-top: 22px;
+    margin-top: 6px;
+    border-top: 1px solid var(--rule);
 }
 
-.pagination a,
-.pagination span {
+.pager a, .pager span {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 34px;
     height: 34px;
-    padding: 0 11px;
-    font-size: 0.8rem;
+    padding: 0 10px;
+    font-size: 13.5px;
     font-weight: 600;
-    border-radius: var(--r-sm);
-    border: 1px solid var(--border);
-    color: var(--text-soft);
-    background: var(--bg-elev-0);
-    transition: all var(--fast);
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-s);
+    background: var(--paper-2);
 }
-.pagination a:hover {
-    color: var(--text);
-    border-color: var(--border-accent);
-    background: var(--accent-soft);
-    transform: translateY(-1px);
-}
-.pagination .current {
-    color: #fff;
-    background: var(--accent);
-    border-color: transparent;
-    box-shadow: 0 4px 14px -5px rgba(79, 124, 255, 0.85);
-}
-.pagination .disabled { color: var(--text-faint); opacity: 0.45; cursor: not-allowed; }
+.pager a:hover { background: var(--paper-3); border-color: var(--rule-firm); }
+.pager .current { color: var(--paper-edge); background: var(--ink); border-color: var(--ink); }
+.pager .disabled { color: var(--ink-4); background: transparent; border-color: var(--rule-soft); }
 
 /* -------------------------------------------------------------------------
-   18. Login page / 登录页
+   13. Session detail / 会话详情
    ------------------------------------------------------------------------- */
-body.login-page {
+.detail-meta {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    padding: 16px 0 20px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 26px;
 }
 
-.login-container {
-    position: relative;
-    width: 100%;
-    max-width: 400px;
-    padding: 36px 32px;
-    box-shadow: var(--shadow-lg);
+.meta-item { font-size: 14px; }
+.meta-item .field-label { margin-bottom: 2px; }
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 24px;
+}
+
+.tab {
+    padding: 6px 13px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-3);
+    border-radius: var(--radius-s);
+    transition: color var(--fast), background var(--fast);
+}
+.tab:hover { color: var(--ink); background: var(--paper-2); }
+.tab.active { color: var(--paper-edge); background: var(--ink); }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Long-form report text: measure capped for readability
+   长文报告：限制每行字数以保证可读性 */
+.report { max-width: 74ch; font-size: 15px; line-height: 1.7; color: var(--ink-2); }
+
+.report h1, .report h2, .report h3, .report h4 {
+    margin: 26px 0 10px;
+    color: var(--ink);
+}
+.report h1 { font-size: 21px; }
+.report h2 { font-size: 18px; }
+.report h3 { font-size: 16px; }
+.report h4 { font-size: 15px; }
+.report > *:first-child { margin-top: 0; }
+
+.report p { margin-bottom: 13px; }
+.report ul, .report ol { margin: 0 0 13px 20px; }
+.report li { margin-bottom: 5px; }
+.report strong { color: var(--ink); font-weight: 600; }
+.report a { color: var(--gain); text-decoration: underline; text-underline-offset: 3px; }
+
+.report code {
+    padding: 1px 5px;
+    font-size: 0.9em;
+    background: var(--paper-3);
+    border-radius: 3px;
+}
+
+.report pre {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-s);
+}
+.report pre code { padding: 0; background: none; font-size: 13px; line-height: 1.65; }
+
+.report blockquote {
+    margin: 0 0 16px;
+    padding: 2px 0 2px 16px;
+    color: var(--ink-2);
+    border-left: 2px solid var(--ink);
+}
+
+.report table {
+    max-width: 100%;
+    margin-bottom: 16px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-s);
     overflow: hidden;
 }
-.login-container::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent), var(--cyan), transparent);
-}
+.report table th { background: var(--paper-3); }
+.report table td { font-variant-numeric: tabular-nums; }
 
-.login-header { text-align: center; margin-bottom: 28px; }
-.login-header h1 { justify-content: center; font-size: 1.2rem; margin-bottom: 8px; }
-.login-header p { color: var(--text-muted); font-size: 0.82rem; }
-
-.login-button {
-    width: 100%;
-    padding: 12px;
-    margin-top: 4px;
-    font-size: 0.9rem;
-    color: #fff;
-    background: var(--accent);
-    border: 1px solid transparent;
-}
-.login-button:hover { background: var(--accent-hover); box-shadow: 0 8px 24px -8px rgba(79, 124, 255, 0.8); transform: translateY(-1px); }
-.login-button:active { transform: translateY(0); }
-
-.error-message {
-    padding: 11px 14px;
-    margin-bottom: 20px;
-    font-size: 0.82rem;
-    color: #FF8296;
-    background: var(--short-soft);
-    border: 1px solid rgba(246, 70, 93, 0.28);
-    border-left-width: 3px;
-    border-left-color: var(--short);
-    border-radius: var(--r-sm);
-}
-
-.security-note {
-    margin-top: 22px;
-    padding: 11px 14px;
-    font-size: 0.75rem;
-    line-height: 1.6;
-    color: var(--text-muted);
-    background: var(--accent-soft);
-    border: 1px solid rgba(79, 124, 255, 0.22);
-    border-radius: var(--r-sm);
-}
-.security-note strong { color: var(--text-soft); }
+.loading { padding: 40px 0; font-size: 14px; color: var(--ink-3); }
 
 /* -------------------------------------------------------------------------
-   19. Responsive / 响应式
+   14. Modal / 模态框
    ------------------------------------------------------------------------- */
-@media (max-width: 1280px) {
-    .main-content { grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); }
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(43, 36, 5, 0.32);
+}
+.modal.active { display: flex; }
+
+.modal-card {
+    width: 100%;
+    max-width: 460px;
+    background: var(--paper);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius);
+    box-shadow: 0 24px 60px -20px rgba(43, 36, 5, 0.45);
+    overflow: hidden;
 }
 
-@media (max-width: 1024px) {
-    .main-content { grid-template-columns: minmax(0, 1fr); }
-    .left-panel,
-    .right-panel { height: auto; min-height: 0; }
-    .left-panel { max-height: 560px; }
-    .chart-wrapper { min-height: 280px; }
+.modal-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--rule);
 }
+.modal-head h2 { font-size: 16px; }
 
-@media (max-width: 900px) {
-    .positions-container { overflow-x: auto; }
-    .positions-table { min-width: 620px; }
-}
+.modal-body { padding: 20px; }
 
-@media (max-width: 768px) {
-    .container { padding: 14px; }
-    header, .header { padding: 16px; }
-    h1 { font-size: 1.12rem; }
-    .status-bar { gap: 10px 16px; }
-    .time-info { margin-left: 0 !important; width: 100%; }
-    .header-actions { margin-left: 0; width: 100%; }
-    .balance-amount { font-size: 1.6rem; }
-    .tab-content { padding: 16px; }
-    .table-container { overflow-x: auto; }
-    .table-container table { min-width: 720px; }
-    .controls { flex-direction: column; align-items: stretch; }
+.modal-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 20px;
+    background: var(--paper-2);
+    border-top: 1px solid var(--rule);
 }
 
 /* -------------------------------------------------------------------------
-   20. Accessibility / 无障碍
+   15. Forms / 表单
+   ------------------------------------------------------------------------- */
+.field { margin-bottom: 16px; }
+.field:last-child { margin-bottom: 0; }
+
+.field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.field input, .field select, .select {
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--paper-edge);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius-s);
+    appearance: none;
+    transition: border-color var(--fast), box-shadow var(--fast);
+}
+
+.field select, .select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235C5324' stroke-width='1.6'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 15px;
+    padding-right: 32px;
+    cursor: pointer;
+}
+
+.field input:focus, .field select:focus, .select:focus {
+    outline: none;
+    border-color: var(--gain);
+    box-shadow: 0 0 0 3px var(--gain-wash);
+}
+
+.field-hint { margin-top: 8px; font-size: 12.5px; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   16. Toast / 提示
+   ------------------------------------------------------------------------- */
+.toast {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 200;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--paper-edge);
+    background: var(--ink);
+    border-radius: var(--radius-s);
+    box-shadow: 0 12px 32px -12px rgba(43, 36, 5, 0.6);
+}
+.toast-error { background: var(--loss); }
+
+/* -------------------------------------------------------------------------
+   17. Login / 登录
+   ------------------------------------------------------------------------- */
+body.login { display: grid; place-items: center; padding: 24px; }
+
+.login-card {
+    width: 100%;
+    max-width: 370px;
+    padding: 34px 30px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius);
+}
+
+.login-card h1 { font-size: 19px; margin-bottom: 4px; }
+.login-card .sub { font-size: 13.5px; color: var(--ink-3); margin-bottom: 24px; }
+.login-card .btn { width: 100%; justify-content: center; padding: 10px; margin-top: 4px; }
+
+.notice {
+    padding: 10px 13px;
+    margin-bottom: 18px;
+    font-size: 13.5px;
+    color: var(--loss);
+    background: var(--loss-wash);
+    border-left: 2px solid var(--loss);
+    border-radius: 0 var(--radius-s) var(--radius-s) 0;
+}
+
+.login-foot { margin-top: 20px; font-size: 12.5px; line-height: 1.55; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   18. Responsive / 响应式
+   ------------------------------------------------------------------------- */
+@media (max-width: 1080px) {
+    .split { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    .position { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+    .stop-meter { grid-column: 1 / -1; }
+}
+
+/* The curve needs room to be readable; below this the number and the chart
+   stack instead of splitting a narrow row.
+   曲线需要足够宽度才可读；低于此宽度时数值与图表改为上下堆叠，
+   而不是挤在一行内。 */
+@media (max-width: 880px) {
+    .equity {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 22px;
+        align-items: stretch;
+    }
+    .equity-chart { min-height: 170px; }
+    .range { justify-content: flex-start; }
+}
+
+@media (max-width: 720px) {
+    .container { padding: 0 16px 40px; }
+    .masthead-meta { margin-left: 0; width: 100%; }
+    .tape-batch { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .tape-row { grid-template-columns: 84px 1fr; }
+    .tape-reason { grid-column: 1 / -1; white-space: normal; }
+    .batch { overflow-x: auto; }
+    table { min-width: 660px; }
+    .report { max-width: none; }
+}
+
+/* -------------------------------------------------------------------------
+   19. Motion / 动效
+   Motion answers an action; nothing animates on load.
+   动效只回应用户操作；加载时不做任何动画。
    ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
+    *, *::before, *::after {
         animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
     }
 }

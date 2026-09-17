@@ -3,149 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>交易历史 - Crypto-Trading-Bot</title>
+    <title>决策记录 - Crypto-Trading-Bot</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="header-left">
-                <h1>📜 交易历史</h1>
-                <div class="stats">
-                    共 <strong>{{.TotalCount}}</strong> 个批次
-                </div>
-            </div>
-            <a href="/" class="back-button">← 返回主页</a>
+<div class="container">
+
+    <div class="masthead">
+        <span class="wordmark">决策记录</span>
+        <div class="masthead-meta">
+            <span>共 <b>{{.TotalCount}}</b> 个批次 · 第 <b>{{.CurrentPage}}</b> / <b>{{.TotalPages}}</b> 页</span>
         </div>
-
-        <div class="content">
-            <div class="controls">
-                <div class="page-size-selector">
-                    <span>每页显示:</span>
-                    <select onchange="changePageSize(this.value)">
-                        <option value="20" {{if eq .PageSize 20}}selected{{end}}>20 条</option>
-                        <option value="50" {{if eq .PageSize 50}}selected{{end}}>50 条</option>
-                        <option value="100" {{if eq .PageSize 100}}selected{{end}}>100 条</option>
-                    </select>
-                </div>
-                <div class="stats">
-                    第 <strong>{{.CurrentPage}}</strong> 页 / 共 <strong>{{.TotalPages}}</strong> 页
-                </div>
-            </div>
-
-            <div class="table-container">
-                {{if .Batches}}
-                    {{range .Batches}}
-                    <div class="trade-batch">
-                        <div class="batch-header">
-                            🕒 批次时间: <strong>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</strong>
-                            {{if .BatchID}}
-                            | 批次ID: <strong>{{.BatchID}}</strong>
-                            {{end}}
-                        </div>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>会话 ID</th>
-                                    <th>交易对</th>
-                                    <th>时间周期</th>
-                                    <th>创建时间</th>
-                                    <th>交易决策</th>
-                                    <th>是否执行</th>
-                                    <th>执行结果</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {{range .Sessions}}
-                                <tr>
-                                    <td>#{{.ID}}</td>
-                                    <td><span class="badge badge-info">{{.Symbol}}</span></td>
-                                    <td>{{.Timeframe}}</td>
-                                    <td>{{.CreatedAt.Format "01-02 15:04"}}</td>
-                                    <td>
-                                        {{$action := extractActionWithSymbol .Decision .Symbol}}
-                                        {{if eq $action "BUY"}}
-                                            <span class="action-badge action-buy">📈 BUY</span>
-                                        {{else if eq $action "SELL"}}
-                                            <span class="action-badge action-sell">📉 SELL</span>
-                                        {{else if eq $action "CLOSE_LONG"}}
-                                            <span class="action-badge action-close">🔒 平多</span>
-                                        {{else if eq $action "CLOSE_SHORT"}}
-                                            <span class="action-badge action-close">🔒 平空</span>
-                                        {{else if eq $action "HOLD"}}
-                                            <span class="action-badge action-hold">💤 HOLD</span>
-                                        {{else if eq $action "NO_DECISION"}}
-                                            <span class="action-badge action-no-decision">➖ N/A</span>
-                                        {{else}}
-                                            <span class="action-badge action-unknown">❓ {{$action}}</span>
-                                        {{end}}
-                                    </td>
-                                    <td>
-                                        {{if .Executed}}
-                                            <span class="badge badge-success">✅ 是</span>
-                                        {{else}}
-                                            <span class="badge badge-warning">⏸ 否</span>
-                                        {{end}}
-                                    </td>
-                                    <td>
-                                        {{if .ExecutionResult}}
-                                            {{.ExecutionResult}}
-                                        {{else}}
-                                            -
-                                        {{end}}
-                                    </td>
-                                    <td>
-                                        <a href="/session/{{.ID}}" class="session-link">查看详情 →</a>
-                                    </td>
-                                </tr>
-                                {{end}}
-                            </tbody>
-                        </table>
-                    </div>
-                    {{end}}
-                {{else}}
-                    <div class="empty-state">
-                        📭 暂无交易历史记录
-                    </div>
-                {{end}}
-            </div>
-
-            {{if gt .TotalPages 1}}
-            <div class="pagination">
-                {{if .HasPrev}}
-                    <a href="?page={{sub .CurrentPage 1}}&page_size={{.PageSize}}">← 上一页</a>
-                {{else}}
-                    <span class="disabled">← 上一页</span>
-                {{end}}
-
-                {{$currentPage := .CurrentPage}}
-                {{$totalPages := .TotalPages}}
-                {{$pageSize := .PageSize}}
-
-                {{range $i := iterate $totalPages}}
-                    {{$page := add $i 1}}
-                    {{if eq $page $currentPage}}
-                        <span class="current">{{$page}}</span>
-                    {{else if or (le $page 3) (ge $page (sub $totalPages 2)) (and (ge $page (sub $currentPage 1)) (le $page (add $currentPage 1)))}}
-                        <a href="?page={{$page}}&page_size={{$pageSize}}">{{$page}}</a>
-                    {{else if or (eq $page 4) (eq $page (sub $totalPages 3))}}
-                        <span>...</span>
-                    {{end}}
-                {{end}}
-
-                {{if .HasNext}}
-                    <a href="?page={{add .CurrentPage 1}}&page_size={{.PageSize}}">下一页 →</a>
-                {{else}}
-                    <span class="disabled">下一页 →</span>
-                {{end}}
-            </div>
-            {{end}}
+        <div class="masthead-actions">
+            <select class="select" style="width:auto" onchange="changePageSize(this.value)">
+                <option value="20" {{if eq .PageSize 20}}selected{{end}}>每页 20 条</option>
+                <option value="50" {{if eq .PageSize 50}}selected{{end}}>每页 50 条</option>
+                <option value="100" {{if eq .PageSize 100}}selected{{end}}>每页 100 条</option>
+            </select>
+            <a href="/" class="btn btn-quiet">返回面板</a>
         </div>
     </div>
 
-    <script>
+    {{if .Batches}}
+        {{range .Batches}}
+        <div class="batch">
+            <div class="batch-head">
+                <span>批次 <b>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</b></span>
+                {{if .BatchID}}<span>{{.BatchID}}</span>{{end}}
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>会话</th>
+                        <th>交易对</th>
+                        <th>周期</th>
+                        <th>时间</th>
+                        <th>决策</th>
+                        <th>理由</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Sessions}}
+                    <tr>
+                        <td>#{{.ID}}</td>
+                        <td><b>{{displaySymbol .Symbol}}</b></td>
+                        <td>{{.Timeframe}}</td>
+                        <td>{{.CreatedAt.Format "01-02 15:04"}}</td>
+                        <td>
+                            {{$action := extractActionWithSymbol .Decision .Symbol}}
+                            {{if eq $action "BUY"}}<span class="verdict verdict-buy">买入</span>
+                            {{else if eq $action "SELL"}}<span class="verdict verdict-sell">卖出</span>
+                            {{else if eq $action "CLOSE_LONG"}}<span class="verdict verdict-close">平多</span>
+                            {{else if eq $action "CLOSE_SHORT"}}<span class="verdict verdict-close">平空</span>
+                            {{else if eq $action "HOLD"}}<span class="verdict verdict-hold">观望</span>
+                            {{else}}<span class="verdict verdict-hold">无决策</span>{{end}}
+                        </td>
+                        <td>{{$r := extractReason .Decision .Symbol}}{{if $r}}{{$r}}{{else}}—{{end}}</td>
+                        <td><a href="/session/{{.ID}}" class="link">查看详情</a></td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}
+    {{else}}
+        <div class="empty"><b>还没有决策记录</b>机器人完成第一轮分析后，这里会显示它的每一次判断。</div>
+    {{end}}
+
+    {{if gt .TotalPages 1}}
+    <div class="pager">
+        {{if .HasPrev}}<a href="?page={{sub .CurrentPage 1}}&page_size={{.PageSize}}">上一页</a>
+        {{else}}<span class="disabled">上一页</span>{{end}}
+
+        {{$currentPage := .CurrentPage}}
+        {{$totalPages := .TotalPages}}
+        {{$pageSize := .PageSize}}
+
+        {{range $i := iterate $totalPages}}
+            {{$page := add $i 1}}
+            {{if eq $page $currentPage}}<span class="current">{{$page}}</span>
+            {{else if or (le $page 3) (ge $page (sub $totalPages 2)) (and (ge $page (sub $currentPage 1)) (le $page (add $currentPage 1)))}}
+                <a href="?page={{$page}}&page_size={{$pageSize}}">{{$page}}</a>
+            {{else if or (eq $page 4) (eq $page (sub $totalPages 3))}}<span class="disabled">…</span>{{end}}
+        {{end}}
+
+        {{if .HasNext}}<a href="?page={{add .CurrentPage 1}}&page_size={{.PageSize}}">下一页</a>
+        {{else}}<span class="disabled">下一页</span>{{end}}
+    </div>
+    {{end}}
+</div>
+
+<script>
         function changePageSize(pageSize) {
             window.location.href = '?page=1&page_size=' + pageSize;
         }

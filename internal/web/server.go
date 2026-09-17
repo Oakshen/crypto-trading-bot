@@ -98,6 +98,7 @@ func (s *Server) setupRoutes() {
 		protected.GET("/api/symbols", s.handleSymbols)
 		protected.GET("/api/balance/history", s.handleBalanceHistory)
 		protected.GET("/api/balance/current", s.handleCurrentBalance)
+		protected.GET("/api/performance", s.handlePerformance)
 
 		// Configuration management
 		// 配置管理
@@ -154,10 +155,26 @@ func (s *Server) handleIndex(ctx context.Context, c *app.RequestContext) {
 		},
 		"extractAction":           extractActionFromDecision,
 		"extractActionWithSymbol": extractActionFromDecisionWithSymbol,
+		"extractReason":           extractReason,
+		"displaySymbol":           displaySymbol,
 	}
 	tmpl := template.Must(template.New("index.html").Funcs(funcMap).ParseFiles("internal/web/templates/index.html"))
 
+	// Performance and baseline drive the dashboard's headline figures
+	// 绩效与基准数据驱动仪表盘的头部核心指标
+	perf, perfErr := s.storage.GetPerformanceStats()
+	if perfErr != nil {
+		s.logger.Warning(fmt.Sprintf("获取绩效统计失败: %v", perfErr))
+		perf = &storage.PerformanceStats{}
+	}
+
+	initialBalance, initialAt, _ := s.storage.GetInitialBalance()
+
 	data := map[string]interface{}{
+		"Perf":            perf,
+		"InitialBalance":  initialBalance,
+		"InitialAt":       initialAt,
+		"HasBaseline":     initialBalance > 0,
 		"Symbols":         s.config.CryptoSymbols,
 		"KlineTimeframe":  s.config.CryptoTimeframe, // K线数据间隔 / K-line data interval
 		"TradingInterval": s.config.TradingInterval, // 系统运行间隔 / System execution interval
@@ -229,6 +246,8 @@ func (s *Server) handleSessionDetail(ctx context.Context, c *app.RequestContext)
 	funcMap := template.FuncMap{
 		"extractAction":           extractActionFromDecision,
 		"extractActionWithSymbol": extractActionFromDecisionWithSymbol,
+		"extractReason":           extractReason,
+		"displaySymbol":           displaySymbol,
 	}
 	tmpl := template.Must(template.New("session_detail.html").Funcs(funcMap).ParseFiles("internal/web/templates/session_detail.html"))
 
@@ -705,6 +724,8 @@ func (s *Server) handleTradeHistory(ctx context.Context, c *app.RequestContext) 
 	funcMap := template.FuncMap{
 		"extractAction":           extractActionFromDecision,
 		"extractActionWithSymbol": extractActionFromDecisionWithSymbol,
+		"extractReason":           extractReason,
+		"displaySymbol":           displaySymbol,
 		"add": func(a, b int) int {
 			return a + b
 		},
@@ -824,4 +845,101 @@ func (s *Server) handleSaveConfig(ctx context.Context, c *app.RequestContext) {
 		"message":          "Configuration saved to .env file",
 		"trading_interval": currentInterval,
 	})
+}
+
+// handlePerformance returns selectivity and realised-outcome statistics.
+// handlePerformance 返回选择性与已实现结果的统计数据
+func (s *Server) handlePerformance(ctx context.Context, c *app.RequestContext) {
+	perf, err := s.storage.GetPerformanceStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, utils.H{"error": err.Error()})
+		return
+	}
+
+	initialBalance, initialAt, _ := s.storage.GetInitialBalance()
+
+	c.JSON(http.StatusOK, utils.H{
+		"total_decisions": perf.TotalDecisions,
+		"traded_count":    perf.TradedCount,
+		"selectivity_pct": perf.SelectivityPct,
+		"closed_count":    perf.ClosedCount,
+		"win_count":       perf.WinCount,
+		"loss_count":      perf.LossCount,
+		"win_rate_pct":    perf.WinRatePct,
+		"avg_win":         perf.AvgWin,
+		"avg_loss":        perf.AvgLoss,
+		"win_loss_ratio":  perf.WinLossRatio,
+		"realised_pnl":    perf.RealisedPnL,
+		"best_trade":      perf.BestTrade,
+		"worst_trade":     perf.WorstTrade,
+		"has_closed_data": perf.HasClosedData,
+		"initial_balance": initialBalance,
+		"initial_at":      initialAt,
+	})
+}
+
+// reasonPattern pulls the model's own one-line rationale out of a decision.
+// reasonPattern 从决策文本中提取模型自己给出的一句话理由
+//
+// The decision tape previously showed ExecutionResult ("✅ 成功执行 BUY"), which
+// only restates the verdict already displayed beside it. The rationale is the
+// one thing the row cannot otherwise convey.
+// 决策带此前显示的是 ExecutionResult（"✅ 成功执行 BUY"），
+// 而这只是重复了旁边已经显示的决策结果。理由才是该行无法以其他方式传达的信息。
+var reasonPattern = regexp.MustCompile(`(?m)\*{0,2}(?:入场理由|理由|判断依据|分析|reason)\*{0,2}\s*[：:]\s*(.+)`)
+
+// extractReason returns a short rationale for a decision, or an empty string.
+// extractReason 返回决策的简短理由；若无则返回空字符串
+func extractReason(decision string, symbol string) string {
+	if decision == "" {
+		return ""
+	}
+
+	// Narrow to this symbol's block first, so a multi-symbol decision does not
+	// attribute one pair's rationale to another.
+	// 先定位到该交易对所属的段落，避免在多币种决策中张冠李戴。
+	segment := decision
+	if symbol != "" {
+		base := strings.ToUpper(strings.ReplaceAll(symbol, "/", ""))
+		upper := strings.ToUpper(decision)
+		for _, marker := range []string{"【" + strings.ToUpper(symbol) + "】", base} {
+			if idx := strings.Index(upper, marker); idx >= 0 {
+				segment = decision[idx:]
+				break
+			}
+		}
+	}
+
+	match := reasonPattern.FindStringSubmatch(segment)
+	if match == nil {
+		return ""
+	}
+
+	reason := strings.TrimSpace(match[1])
+	reason = strings.Trim(reason, "*")
+	reason = strings.TrimSpace(reason)
+
+	// Keep the tape to one line; the full text is on the session page.
+	// 决策带只保留一行；完整内容在会话详情页。
+	const limit = 90
+	runes := []rune(reason)
+	if len(runes) > limit {
+		reason = string(runes[:limit]) + "…"
+	}
+
+	return reason
+}
+
+// displaySymbol renders a pair consistently as BTC/USDT.
+// displaySymbol 将交易对统一显示为 BTC/USDT 格式
+func displaySymbol(symbol string) string {
+	if strings.Contains(symbol, "/") {
+		return symbol
+	}
+	for _, quote := range []string{"USDT", "USDC", "BUSD"} {
+		if strings.HasSuffix(symbol, quote) && len(symbol) > len(quote) {
+			return symbol[:len(symbol)-len(quote)] + "/" + quote
+		}
+	}
+	return symbol
 }

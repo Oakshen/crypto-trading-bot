@@ -3,131 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> 会话详情 #{{.Session.ID}} - Crypto-Trading-Bot</title>
+    <title>会话 #{{.Session.ID}} - Crypto-Trading-Bot</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/app.css">
-    <!-- Marked.js for Markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="header-top">
-                <h1>📊 会话详情 #{{.Session.ID}}</h1>
-                <a href="/" class="back-button">← 返回主页</a>
-            </div>
-            <div class="session-info">
-                <div class="info-item">
-                    <strong>交易对:</strong>
-                    <span class="badge badge-info">{{.Session.Symbol}}</span>
-                </div>
-                <div class="info-item">
-                    <strong>时间周期:</strong>
-                    <span class="badge badge-info">{{.Session.Timeframe}}</span>
-                </div>
-                <div class="info-item">
-                    <strong>创建时间:</strong>
-                    <span>{{.Session.CreatedAt.Format "2006-01-02 15:04:05"}}</span>
-                </div>
-                <div class="info-item">
-                    <strong>已执行:</strong>
-                    {{if .Session.Executed}}
-                    <span class="badge badge-success">✅ 是</span>
-                    {{else}}
-                    <span class="badge badge-warning">⏸ 否</span>
-                    {{end}}
-                </div>
-                {{if .Session.Decision}}
-                <div class="info-item">
-                    <strong>交易决策:</strong>
-                    {{$action := extractActionWithSymbol .Session.Decision .Session.Symbol}}
-                    {{if eq $action "BUY"}}
-                        <span class="action-badge action-buy">📈 BUY</span>
-                    {{else if eq $action "SELL"}}
-                        <span class="action-badge action-sell">📉 SELL</span>
-                    {{else if eq $action "CLOSE_LONG"}}
-                        <span class="action-badge action-close">🔒 平多</span>
-                    {{else if eq $action "CLOSE_SHORT"}}
-                        <span class="action-badge action-close">🔒 平空</span>
-                    {{else if eq $action "HOLD"}}
-                        <span class="action-badge action-hold">💤 HOLD</span>
-                    {{else if eq $action "NO_DECISION"}}
-                        <span class="action-badge action-no-decision">➖ N/A</span>
-                    {{else}}
-                        <span class="action-badge action-unknown">❓ {{$action}}</span>
-                    {{end}}
-                </div>
-                {{end}}
-            </div>
-        </div>
+<div class="container">
 
-        <div class="tabs-container">
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab(event, 'full_decision')">
-                    🤖 LLM 原始输出
-                </button>
-                <button class="tab" onclick="switchTab(event, 'decision')">
-                    🎯 本交易对决策
-                </button>
-                <button class="tab" onclick="switchTab(event, 'market')">
-                    📊 市场分析
-                </button>
-                <button class="tab" onclick="switchTab(event, 'crypto')">
-                    💰 加密货币分析
-                </button>
-                <button class="tab" onclick="switchTab(event, 'sentiment')">
-                    😊 市场情绪
-                </button>
-                <button class="tab" onclick="switchTab(event, 'position')">
-                    💼 持仓信息
-                </button>
-            </div>
-
-            <div id="full_decision" class="tab-content active">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染 LLM 原始输出...</p>
-                </div>
-            </div>
-
-            <div id="decision" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染本交易对决策...</p>
-                </div>
-            </div>
-
-            <div id="market" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染市场分析...</p>
-                </div>
-            </div>
-
-            <div id="crypto" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染加密货币分析...</p>
-                </div>
-            </div>
-
-            <div id="sentiment" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染情绪分析...</p>
-                </div>
-            </div>
-
-            <div id="position" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染持仓信息...</p>
-                </div>
-            </div>
+    <div class="masthead">
+        <span class="wordmark">会话 #{{.Session.ID}}</span>
+        <div class="masthead-actions" style="margin-left:auto">
+            <a href="/trade-history" class="btn btn-quiet">决策记录</a>
+            <a href="/" class="btn btn-quiet">返回面板</a>
         </div>
     </div>
 
-    <script>
+    <div class="detail-meta">
+        <div class="meta-item">
+            <div class="field-label">交易对</div>
+            <div class="field-value">{{displaySymbol .Session.Symbol}}</div>
+        </div>
+        <div class="meta-item">
+            <div class="field-label">K 线周期</div>
+            <div class="field-value">{{.Session.Timeframe}}</div>
+        </div>
+        <div class="meta-item">
+            <div class="field-label">时间</div>
+            <div class="field-value">{{.Session.CreatedAt.Format "2006-01-02 15:04:05"}}</div>
+        </div>
+        {{if .Session.Decision}}
+        <div class="meta-item">
+            <div class="field-label">决策</div>
+            <div class="field-value">
+                {{$action := extractActionWithSymbol .Session.Decision .Session.Symbol}}
+                {{if eq $action "BUY"}}<span class="verdict verdict-buy">买入</span>
+                {{else if eq $action "SELL"}}<span class="verdict verdict-sell">卖出</span>
+                {{else if eq $action "CLOSE_LONG"}}<span class="verdict verdict-close">平多</span>
+                {{else if eq $action "CLOSE_SHORT"}}<span class="verdict verdict-close">平空</span>
+                {{else if eq $action "HOLD"}}<span class="verdict verdict-hold">观望</span>
+                {{else}}<span class="verdict verdict-hold">无决策</span>{{end}}
+            </div>
+        </div>
+        {{end}}
+        <div class="meta-item">
+            <div class="field-label">是否执行</div>
+            <div class="field-value">{{if .Session.Executed}}已执行{{else}}未执行{{end}}</div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab(event, 'full_decision')">LLM 原始输出</button>
+        <button class="tab" onclick="switchTab(event, 'decision')">本交易对决策</button>
+        <button class="tab" onclick="switchTab(event, 'market')">市场分析</button>
+        <button class="tab" onclick="switchTab(event, 'crypto')">币种分析</button>
+        <button class="tab" onclick="switchTab(event, 'sentiment')">市场情绪</button>
+        <button class="tab" onclick="switchTab(event, 'position')">持仓信息</button>
+    </div>
+
+    <div id="full_decision" class="panel active"><div class="loading">正在渲染…</div></div>
+    <div id="decision" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="market" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="crypto" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="sentiment" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="position" class="panel"><div class="loading">正在渲染…</div></div>
+</div>
+
+<script>
         // Session data from Go template
         const sessionData = {
             fullDecision: {{.Session.FullDecision}},
@@ -147,13 +92,13 @@
         // Render markdown content
         function renderMarkdown(content) {
             if (!content || content.trim() === '') {
-                return '<div class="empty-content">📭 暂无内容</div>';
+                return '<div class="empty"><b>这一步没有产出内容</b>该智能体在本次会话中没有返回报告。</div>';
             }
             try {
-                return '<div class="report-content">' + marked.parse(content) + '</div>';
+                return '<div class="report">' + marked.parse(content) + '</div>';
             } catch (e) {
                 console.error('Markdown rendering error:', e);
-                return '<div class="empty-content">⚠️ 渲染失败: ' + e.message + '</div>';
+                return '<div class="empty"><b>无法渲染这份报告</b>' + e.message + '</div>';
             }
         }
 
@@ -170,7 +115,7 @@
         // Tab switching
         function switchTab(event, tabId) {
             // Hide all tab contents
-            const contents = document.getElementsByClassName('tab-content');
+            const contents = document.getElementsByClassName('panel');
             for (let content of contents) {
                 content.classList.remove('active');
             }

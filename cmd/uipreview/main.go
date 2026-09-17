@@ -156,6 +156,53 @@ func seed(db *storage.Storage) error {
 		}
 	}
 
+	// Closed trades shaped like the strategy this bot actually runs: a low win
+	// rate carried by a high payoff ratio. Without these the discipline panel
+	// has nothing to show.
+	// 已平仓交易按本机器人实际运行的策略塑造：低胜率、高盈亏比。
+	// 没有这些数据，纪律面板就无内容可展示。
+	closed := []float64{412.80, -96.40, -88.15, 733.20, -102.60, -91.05, 268.45, -84.30, -110.20, 519.60, -97.85, -93.40, 344.10}
+	for i, pnl := range closed {
+		openedAt := now.Add(-time.Duration(len(closed)-i) * 9 * time.Hour)
+		sym := []string{"BTCUSDT", "ETHUSDT", "SOLUSDT"}[i%3]
+		side := "long"
+		if i%4 == 1 {
+			side = "short"
+		}
+
+		closedAt := openedAt.Add(6 * time.Hour)
+		rec := &storage.PositionRecord{
+			ID:              fmt.Sprintf("%s-closed-%d", sym, i),
+			Symbol:          sym,
+			Side:            side,
+			EntryPrice:      80000 + float64(i)*120,
+			EntryTime:       openedAt,
+			Quantity:        0.1,
+			Leverage:        15,
+			InitialStopLoss: 78000,
+			CurrentStopLoss: 78900,
+			StopLossType:    "trailing",
+			HighestPrice:    82000,
+			CurrentPrice:    81500,
+			OpenReason:      "趋势确认后入场",
+			Closed:          true,
+			CloseTime:       &closedAt,
+			ClosePrice:      81500,
+			CloseReason:     "追踪止损触发",
+			RealizedPnL:     pnl,
+		}
+		// Mirror the real flow: SavePosition records the open, UpdatePosition
+		// writes the close fields. Insert alone leaves realized_pnl NULL.
+		// 复现真实流程：SavePosition 记录开仓，UpdatePosition 写入平仓字段。
+		// 只做插入会让 realized_pnl 保持为 NULL。
+		if err := db.SavePosition(rec); err != nil {
+			return err
+		}
+		if err := db.UpdatePosition(rec); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
