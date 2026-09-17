@@ -264,129 +264,35 @@ func (s *Server) renderLoginPage(c *app.RequestContext, errorMsg string) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登录 - 加密货币交易机器人</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .login-container {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-            padding: 40px;
-            width: 100%;
-            max-width: 400px;
-        }
-        .login-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .login-header h1 {
-            color: #333;
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-        .login-header p {
-            color: #666;
-            font-size: 14px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            color: #333;
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .error-message {
-            background: #fee;
-            color: #c33;
-            padding: 12px 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            border-left: 4px solid #c33;
-        }
-        .login-button {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.3s;
-        }
-        .login-button:hover {
-            opacity: 0.9;
-        }
-        .login-button:active {
-            transform: translateY(1px);
-        }
-        .security-note {
-            margin-top: 20px;
-            padding: 12px;
-            background: #f0f7ff;
-            border-radius: 5px;
-            font-size: 12px;
-            color: #0066cc;
-            border-left: 4px solid #0066cc;
-        }
-    </style>
+    <title>登录 - Crypto-Trading-Bot</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body>
-    <div class="login-container">
-        <div class="login-header">
-            <h1>🤖 加密货币交易机器人</h1>
-            <p>请登录以访问监控面板</p>
-        </div>
+<body class="login">
+    <div class="login-card">
+        <h1>Crypto-Trading-Bot</h1>
+        <p class="sub">登录后查看机器人的持仓与决策</p>
         ` + func() string {
 		if errorMsg != "" {
-			return `<div class="error-message">` + errorMsg + `</div>`
+			return `<div class="notice">` + errorMsg + `</div>`
 		}
 		return ""
 	}() + `
         <form method="POST" action="/login">
-            <div class="form-group">
+            <div class="field">
                 <label for="username">用户名</label>
-                <input type="text" id="username" name="username" required autofocus>
+                <input type="text" id="username" name="username" required autofocus autocomplete="username">
             </div>
-            <div class="form-group">
+            <div class="field">
                 <label for="password">密码</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
             </div>
-            <button type="submit" class="login-button">登录</button>
+            <button type="submit" class="btn btn-primary">登录</button>
         </form>
-        <div class="security-note">
-            🔒 <strong>安全提示：</strong> 请确保在安全的网络环境下访问。建议使用 HTTPS 并配置强密码。
-        </div>
+        <p class="login-foot">这个面板可以查看实盘持仓。请通过 HTTPS 访问，并使用强密码。</p>
     </div>
 </body>
 </html>`

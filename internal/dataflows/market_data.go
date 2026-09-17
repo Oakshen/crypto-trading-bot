@@ -115,18 +115,42 @@ func NewMarketData(cfg *config.Config) *MarketData {
 }
 
 // GetOHLCV fetches OHLCV data for a symbol
+// GetOHLCV 获取交易对的 OHLCV 数据
+//
+// Binance caps /fapi/v1/klines at 1000 candles and, when startTime is supplied,
+// returns the OLDEST 1000 candles from that point forward. Requesting a window
+// that needs more than 1000 candles therefore returned data that stopped well
+// before now: 3m over 3 days needs 1440 candles, so the response ended roughly
+// 22 hours in the past and every indicator was computed on stale prices.
+// 币安 /fapi/v1/klines 单次最多返回 1000 根 K 线，且传入 startTime 时
+// 返回的是从该时间点往后「最早」的 1000 根。
+// 因此，一旦请求窗口需要超过 1000 根，返回的数据就会在远未到达当前时间处截断：
+// 3m 周期回看 3 天需要 1440 根，响应会停在约 22 小时之前，
+// 导致所有技术指标都是基于过期价格计算的。
+//
+// The window is now clamped so the response always ends at the current candle.
+// 现在会对窗口做收敛处理，保证返回的数据始终以当前 K 线结尾。
 func (m *MarketData) GetOHLCV(ctx context.Context, symbol string, timeframe string, lookbackDays int) ([]OHLCV, error) {
 	interval := convertTimeframe(timeframe)
 
-	startTime := time.Now().AddDate(0, 0, -lookbackDays)
 	endTime := time.Now()
+	startTime := endTime.AddDate(0, 0, -lookbackDays)
+
+	// Clamp the start time so the requested span never exceeds the API limit
+	// 收敛起始时间，使请求跨度不超过接口上限
+	if intervalDur := intervalDuration(interval); intervalDur > 0 {
+		maxSpan := time.Duration(binanceKlineLimit) * intervalDur
+		if endTime.Sub(startTime) > maxSpan {
+			startTime = endTime.Add(-maxSpan)
+		}
+	}
 
 	klines, err := m.client.NewKlinesService().
 		Symbol(symbol).
 		Interval(interval).
 		StartTime(startTime.UnixMilli()).
 		EndTime(endTime.UnixMilli()).
-		Limit(1000).
+		Limit(binanceKlineLimit).
 		Do(ctx)
 
 	if err != nil {
@@ -1059,6 +1083,50 @@ func formatPrice(priceStr string) string {
 	}
 }
 
+// binanceKlineLimit is the maximum number of candles a single klines call returns.
+// binanceKlineLimit 是单次 K 线请求可返回的最大根数
+const binanceKlineLimit = 1000
+
+// intervalDuration converts a Binance interval into a wall-clock duration.
+// intervalDuration 将币安的时间周期字符串转换为实际时长
+//
+// Returns 0 for calendar-based intervals ("1M"), whose length is not fixed.
+// 对于按自然月计算的 "1M" 返回 0，因为其长度不固定。
+func intervalDuration(interval string) time.Duration {
+	switch interval {
+	case "1m":
+		return time.Minute
+	case "3m":
+		return 3 * time.Minute
+	case "5m":
+		return 5 * time.Minute
+	case "15m":
+		return 15 * time.Minute
+	case "30m":
+		return 30 * time.Minute
+	case "1h":
+		return time.Hour
+	case "2h":
+		return 2 * time.Hour
+	case "4h":
+		return 4 * time.Hour
+	case "6h":
+		return 6 * time.Hour
+	case "8h":
+		return 8 * time.Hour
+	case "12h":
+		return 12 * time.Hour
+	case "1d":
+		return 24 * time.Hour
+	case "3d":
+		return 72 * time.Hour
+	case "1w":
+		return 7 * 24 * time.Hour
+	default:
+		return 0
+	}
+}
+
 func convertTimeframe(tf string) string {
 	// Convert from format like "1h", "15m", "1d" to Binance interval format
 	// Binance supports: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
@@ -1281,11 +1349,22 @@ func FormatMultiTimeframeReport(indicators []MultiTimeframeIndicator) string {
 
 	// Define display names for timeframes (Chinese)
 	// 定义时间框架的显示名称（中文）
+	// 3m is the timeframe the README recommends for fast klines, but it was
+	// missing here, so those rows rendered as a bare "3m" among Chinese labels.
+	// 3m 是 README 推荐的快速 K 线周期，但此处漏了它，
+	// 导致该行在一列中文标签里显示为裸露的 "3m"。
 	displayNames := map[string]string{
+		"1m":  "1分钟",
+		"3m":  "3分钟",
 		"5m":  "5分钟",
 		"15m": "15分钟",
+		"30m": "30分钟",
 		"1h":  "1小时",
+		"2h":  "2小时",
 		"4h":  "4小时",
+		"6h":  "6小时",
+		"12h": "12小时",
+		"1d":  "1天",
 	}
 
 	for _, ind := range indicators {

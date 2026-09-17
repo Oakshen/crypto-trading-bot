@@ -3,13 +3,16 @@ package executors
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/adshao/go-binance/v2/common"
 	"github.com/adshao/go-binance/v2/futures"
 	"github.com/jpillora/backoff"
 	"github.com/oak/crypto-trading-bot/internal/config"
@@ -125,6 +128,20 @@ type BinanceExecutor struct {
 	positionMode PositionMode
 	logger       *logger.ColorLogger
 	tradeHistory []TradeResult
+
+	// symbolInfo caches exchangeInfo so every price/quantity is formatted to the
+	// symbol's real tickSize/stepSize instead of a hardcoded guess.
+	// symbolInfo 缓存 exchangeInfo，使每个价格/数量都按交易对真实的
+	// tickSize/stepSize 格式化，而不是依赖硬编码的猜测值。
+	symbolInfo *SymbolInfoCache
+
+	// symbolConfigs caches leverage / margin type, which /fapi/v3/positionRisk
+	// no longer returns.
+	// symbolConfigs 缓存杠杆与保证金模式，这些字段 /fapi/v3/positionRisk 已不再返回。
+	symbolConfigs *symbolConfigCache
+
+	timeSyncMu   sync.Mutex
+	lastTimeSync time.Time
 }
 
 // NewBinanceExecutor creates a new BinanceExecutor
@@ -159,11 +176,13 @@ func NewBinanceExecutor(cfg *config.Config, log *logger.ColorLogger) *BinanceExe
 	}
 
 	executor := &BinanceExecutor{
-		client:       client,
-		config:       cfg,
-		testMode:     cfg.BinanceTestMode,
-		logger:       log,
-		tradeHistory: make([]TradeResult, 0),
+		client:        client,
+		config:        cfg,
+		testMode:      cfg.BinanceTestMode,
+		logger:        log,
+		tradeHistory:  make([]TradeResult, 0),
+		symbolInfo:    NewSymbolInfoCache(client),
+		symbolConfigs: newSymbolConfigCache(),
 	}
 
 	// Mode logging removed from constructor to avoid repetitive logs
@@ -217,31 +236,24 @@ func (e *BinanceExecutor) DetectMarginType(ctx context.Context, symbol string) (
 
 	var marginType MarginType
 
+	// Margin type comes from /fapi/v1/symbolConfig; /fapi/v3/positionRisk no
+	// longer carries it, and reading it from positionRisk only worked when a
+	// position already existed.
+	// 保证金模式来自 /fapi/v1/symbolConfig；/fapi/v3/positionRisk 已不再返回该字段，
+	// 而且原先从 positionRisk 读取的写法只有在已有持仓时才有效。
 	err := e.withRetry(func() error {
-		positions, err := e.client.NewGetPositionRiskService().
-			Symbol(binanceSymbol).
-			Do(ctx)
-
+		cfg, err := e.GetSymbolConfig(ctx, binanceSymbol)
 		if err != nil {
 			return err
 		}
 
-		// Check margin type from position risk info
-		// 从持仓风险信息中获取保证金类型
-		if len(positions) > 0 {
-			marginTypeStr := strings.ToLower(positions[0].MarginType)
-			if marginTypeStr == "cross" {
-				marginType = MarginTypeCross
-			} else if marginTypeStr == "isolated" {
-				marginType = MarginTypeIsolated
-			} else {
-				// Default to cross if unknown
-				// 未知类型默认为全仓
-				marginType = MarginTypeCross
-			}
-		} else {
-			// No position data, default to cross
-			// 无持仓数据，默认为全仓
+		switch strings.ToLower(cfg.MarginType) {
+		case "isolated":
+			marginType = MarginTypeIsolated
+		default:
+			// Binance reports "crossed" for cross margin; anything unknown is
+			// treated as cross, matching the account default.
+			// 币安全仓返回的是 "crossed"；未知值一律按全仓处理，与账户默认一致。
 			marginType = MarginTypeCross
 		}
 
@@ -258,6 +270,10 @@ func (e *BinanceExecutor) DetectMarginType(ctx context.Context, symbol string) (
 
 // SetupExchange sets up exchange parameters
 func (e *BinanceExecutor) SetupExchange(ctx context.Context, symbol string, leverage int) error {
+	// Keep the signing clock aligned before any signed request
+	// 在所有签名请求之前对齐签名用的时钟
+	e.syncServerTime(ctx)
+
 	// Detect position mode
 	if err := e.DetectPositionMode(ctx); err != nil {
 		return fmt.Errorf("failed to detect position mode: %w", err)
@@ -301,32 +317,37 @@ func (e *BinanceExecutor) SetupExchange(ctx context.Context, symbol string, leve
 		return fmt.Errorf("failed to set leverage: %w", err)
 	}
 
+	// Our cached leverage is now stale
+	// 缓存中的杠杆值已过期
+	e.invalidateSymbolConfig(symbol)
 	e.logger.Success(fmt.Sprintf("设置杠杆倍数: %dx", leverage))
 
 checkBalance:
 	// Get balance
-	account, err := e.client.NewGetAccountService().Do(ctx)
+	balance, err := e.GetAccountBalance(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get account info: %w", err)
 	}
 
-	for _, asset := range account.Assets {
-		if asset.Asset == "USDT" {
-			balance, _ := parseFloat(asset.AvailableBalance)
-			e.logger.Success(fmt.Sprintf("当前 USDT 余额: %.2f", balance))
-			break
-		}
-	}
+	e.logger.Success(fmt.Sprintf("当前 USDT 余额: %.2f", balance.AvailableBalance))
 
 	return nil
 }
 
 // GetCurrentPosition gets the current position for a symbol
+// GetCurrentPosition 获取交易对的当前持仓
+//
+// Uses GET /fapi/v3/positionRisk, which replaces the deprecated v2 endpoint.
+// In Hedge Mode both a LONG and a SHORT entry can be non-zero at the same time,
+// so the larger one is returned rather than whichever happens to come first.
+// 使用 GET /fapi/v3/positionRisk（取代已弃用的 v2 接口）。
+// 双向持仓模式下 LONG 和 SHORT 可能同时非零，因此返回持仓量较大的一条，
+// 而不是返回顺序上碰巧排在前面的那条。
 func (e *BinanceExecutor) GetCurrentPosition(ctx context.Context, symbol string) (*Position, error) {
 	var position *Position
 
 	err := e.withRetry(func() error {
-		positions, err := e.client.NewGetPositionRiskService().
+		positions, err := e.client.NewGetPositionRiskV3Service().
 			Symbol(e.config.GetBinanceSymbolFor(symbol)).
 			Do(ctx)
 
@@ -334,30 +355,36 @@ func (e *BinanceExecutor) GetCurrentPosition(ctx context.Context, symbol string)
 			return err
 		}
 
+		position = nil
 		for _, pos := range positions {
 			posAmt, _ := parseFloat(pos.PositionAmt)
-			if posAmt != 0 {
-				entryPrice, _ := parseFloat(pos.EntryPrice)
-				unrealizedPnL, _ := parseFloat(pos.UnRealizedProfit)
-				liquidationPrice, _ := parseFloat(pos.LiquidationPrice)
-				leverage, _ := parseInt(pos.Leverage)
+			if posAmt == 0 {
+				continue
+			}
 
-				side := "long"
-				if posAmt < 0 {
-					side = "short"
-				}
+			// Keep the dominant leg when both sides are open (Hedge Mode)
+			// 双向持仓同时有多空腿时，保留数量更大的一条
+			if position != nil && math.Abs(posAmt) <= math.Abs(position.PositionAmt) {
+				continue
+			}
 
-				position = &Position{
-					Side:             side,
-					Size:             math.Abs(posAmt),
-					EntryPrice:       entryPrice,
-					UnrealizedPnL:    unrealizedPnL,
-					PositionAmt:      posAmt,
-					Symbol:           pos.Symbol,
-					Leverage:         leverage,
-					LiquidationPrice: liquidationPrice,
-				}
-				break
+			entryPrice, _ := parseFloat(pos.EntryPrice)
+			unrealizedPnL, _ := parseFloat(pos.UnRealizedProfit)
+			liquidationPrice, _ := parseFloat(pos.LiquidationPrice)
+
+			side := "long"
+			if posAmt < 0 {
+				side = "short"
+			}
+
+			position = &Position{
+				Side:             side,
+				Size:             math.Abs(posAmt),
+				EntryPrice:       entryPrice,
+				UnrealizedPnL:    unrealizedPnL,
+				PositionAmt:      posAmt,
+				Symbol:           pos.Symbol,
+				LiquidationPrice: liquidationPrice,
 			}
 		}
 
@@ -366,6 +393,16 @@ func (e *BinanceExecutor) GetCurrentPosition(ctx context.Context, symbol string)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get position: %w", err)
+	}
+
+	// Leverage is no longer part of the positionRisk payload in v3
+	// v3 的 positionRisk 响应中已不再包含杠杆字段
+	if position != nil {
+		if cfg, cfgErr := e.GetSymbolConfig(ctx, symbol); cfgErr == nil {
+			position.Leverage = cfg.Leverage
+		} else {
+			e.logger.Warning(fmt.Sprintf("⚠️  无法获取 %s 的杠杆配置: %v", symbol, cfgErr))
+		}
 	}
 
 	return position, nil
@@ -453,6 +490,13 @@ func (e *BinanceExecutor) ExecuteTrade(ctx context.Context, symbol string, actio
 func (e *BinanceExecutor) executeBuy(ctx context.Context, symbol string, currentPosition *Position, amount float64, result *TradeResult) error {
 	binanceSymbol := e.config.GetBinanceSymbolFor(symbol)
 
+	// Format every quantity against the symbol's real stepSize
+	// 所有数量都按交易对真实的 stepSize 格式化
+	filters, err := e.SymbolFilters(ctx, symbol)
+	if err != nil {
+		return fmt.Errorf("无法获取 %s 的交易规则: %w", symbol, err)
+	}
+
 	// Close short position if exists
 	if currentPosition != nil && currentPosition.Side == "short" {
 		modeLabel := ""
@@ -465,12 +509,12 @@ func (e *BinanceExecutor) executeBuy(ctx context.Context, symbol string, current
 			positionSide = futures.PositionSideTypeBoth
 		}
 
-		_, err := e.client.NewCreateOrderService().
+		_, err = e.client.NewCreateOrderService().
 			Symbol(binanceSymbol).
 			Side(futures.SideTypeBuy).
 			PositionSide(positionSide).
 			Type(futures.OrderTypeMarket).
-			Quantity(fmt.Sprintf("%.4f", currentPosition.Size)).
+			Quantity(filters.FormatQuantity(currentPosition.Size)).
 			Do(ctx)
 
 		if err != nil {
@@ -496,7 +540,7 @@ func (e *BinanceExecutor) executeBuy(ctx context.Context, symbol string, current
 			Side(futures.SideTypeBuy).
 			PositionSide(positionSide).
 			Type(futures.OrderTypeMarket).
-			Quantity(fmt.Sprintf("%.4f", amount)).
+			Quantity(filters.FormatQuantity(amount)).
 			Do(ctx)
 
 		if err != nil {
@@ -535,6 +579,13 @@ func (e *BinanceExecutor) executeBuy(ctx context.Context, symbol string, current
 func (e *BinanceExecutor) executeSell(ctx context.Context, symbol string, currentPosition *Position, amount float64, result *TradeResult) error {
 	binanceSymbol := e.config.GetBinanceSymbolFor(symbol)
 
+	// Format every quantity against the symbol's real stepSize
+	// 所有数量都按交易对真实的 stepSize 格式化
+	filters, err := e.SymbolFilters(ctx, symbol)
+	if err != nil {
+		return fmt.Errorf("无法获取 %s 的交易规则: %w", symbol, err)
+	}
+
 	// Close long position if exists
 	if currentPosition != nil && currentPosition.Side == "long" {
 		modeLabel := ""
@@ -547,12 +598,12 @@ func (e *BinanceExecutor) executeSell(ctx context.Context, symbol string, curren
 			positionSide = futures.PositionSideTypeBoth
 		}
 
-		_, err := e.client.NewCreateOrderService().
+		_, err = e.client.NewCreateOrderService().
 			Symbol(binanceSymbol).
 			Side(futures.SideTypeSell).
 			PositionSide(positionSide).
 			Type(futures.OrderTypeMarket).
-			Quantity(fmt.Sprintf("%.4f", currentPosition.Size)).
+			Quantity(filters.FormatQuantity(currentPosition.Size)).
 			Do(ctx)
 
 		if err != nil {
@@ -578,7 +629,7 @@ func (e *BinanceExecutor) executeSell(ctx context.Context, symbol string, curren
 			Side(futures.SideTypeSell).
 			PositionSide(positionSide).
 			Type(futures.OrderTypeMarket).
-			Quantity(fmt.Sprintf("%.4f", amount)).
+			Quantity(filters.FormatQuantity(amount)).
 			Do(ctx)
 
 		if err != nil {
@@ -632,6 +683,11 @@ func (e *BinanceExecutor) executeCloseLong(ctx context.Context, symbol string, c
 		positionSide = futures.PositionSideTypeBoth
 	}
 
+	filters, err := e.SymbolFilters(ctx, symbol)
+	if err != nil {
+		return fmt.Errorf("无法获取 %s 的交易规则: %w", symbol, err)
+	}
+
 	// Create order service
 	// 创建订单服务
 	orderService := e.client.NewCreateOrderService().
@@ -639,11 +695,16 @@ func (e *BinanceExecutor) executeCloseLong(ctx context.Context, symbol string, c
 		Side(futures.SideTypeSell).
 		PositionSide(positionSide).
 		Type(futures.OrderTypeMarket).
-		Quantity(fmt.Sprintf("%.4f", currentPosition.Size))
+		Quantity(filters.FormatQuantity(currentPosition.Size))
 
-	// Only use ReduceOnly in Hedge mode, not in One-way mode
-	// 只在双向持仓模式使用 ReduceOnly，单向模式不使用
-	if e.positionMode == PositionModeHedge {
+	// reduceOnly is rejected in Hedge Mode ("Cannot be sent in Hedge Mode"):
+	// there the LONG/SHORT positionSide already makes the order reduce-only.
+	// One-way Mode is where it is actually needed, to guarantee this order can
+	// only close the position and never flip it.
+	// 双向持仓模式禁止传 reduceOnly（"Cannot be sent in Hedge Mode"）：
+	// 该模式下 LONG/SHORT 的 positionSide 本身已表达只减仓的语义。
+	// 真正需要它的是单向持仓模式，用来保证这笔订单只会平仓、绝不会反向开仓。
+	if e.positionMode == PositionModeOneWay {
 		orderService = orderService.ReduceOnly(true)
 	}
 
@@ -682,6 +743,11 @@ func (e *BinanceExecutor) executeCloseShort(ctx context.Context, symbol string, 
 		positionSide = futures.PositionSideTypeBoth
 	}
 
+	filters, err := e.SymbolFilters(ctx, symbol)
+	if err != nil {
+		return fmt.Errorf("无法获取 %s 的交易规则: %w", symbol, err)
+	}
+
 	// Create order service
 	// 创建订单服务
 	orderService := e.client.NewCreateOrderService().
@@ -689,11 +755,16 @@ func (e *BinanceExecutor) executeCloseShort(ctx context.Context, symbol string, 
 		Side(futures.SideTypeBuy).
 		PositionSide(positionSide).
 		Type(futures.OrderTypeMarket).
-		Quantity(fmt.Sprintf("%.4f", currentPosition.Size))
+		Quantity(filters.FormatQuantity(currentPosition.Size))
 
-	// Only use ReduceOnly in Hedge mode, not in One-way mode
-	// 只在双向持仓模式使用 ReduceOnly，单向模式不使用
-	if e.positionMode == PositionModeHedge {
+	// reduceOnly is rejected in Hedge Mode ("Cannot be sent in Hedge Mode"):
+	// there the LONG/SHORT positionSide already makes the order reduce-only.
+	// One-way Mode is where it is actually needed, to guarantee this order can
+	// only close the position and never flip it.
+	// 双向持仓模式禁止传 reduceOnly（"Cannot be sent in Hedge Mode"）：
+	// 该模式下 LONG/SHORT 的 positionSide 本身已表达只减仓的语义。
+	// 真正需要它的是单向持仓模式，用来保证这笔订单只会平仓、绝不会反向开仓。
+	if e.positionMode == PositionModeOneWay {
 		orderService = orderService.ReduceOnly(true)
 	}
 
@@ -721,19 +792,13 @@ func (e *BinanceExecutor) GetAccountSummary(ctx context.Context) string {
 
 	// Get account balance
 	// 获取账户余额
-	account, err := e.client.NewGetAccountService().Do(ctx)
+	balance, err := e.GetAccountBalance(ctx)
 	if err != nil {
 		return fmt.Sprintf("**获取账户信息失败**: %v", err)
 	}
 
-	var usdtFree, usdtTotal float64
-	for _, asset := range account.Assets {
-		if asset.Asset == "USDT" {
-			usdtFree, _ = parseFloat(asset.AvailableBalance)
-			usdtTotal, _ = parseFloat(asset.WalletBalance)
-			break
-		}
-	}
+	usdtFree := balance.AvailableBalance
+	usdtTotal := balance.WalletBalance
 
 	// Calculate used margin and usage rate
 	// 计算已用保证金和资金使用率
@@ -881,19 +946,13 @@ func (e *BinanceExecutor) GetPositionSummary(ctx context.Context, symbol string,
 	var summary strings.Builder
 
 	// Get account balance
-	account, err := e.client.NewGetAccountService().Do(ctx)
+	balance, err := e.GetAccountBalance(ctx)
 	if err != nil {
 		return fmt.Sprintf("**获取账户信息失败**: %v", err)
 	}
 
-	var usdtFree, usdtTotal float64
-	for _, asset := range account.Assets {
-		if asset.Asset == "USDT" {
-			usdtFree, _ = parseFloat(asset.AvailableBalance)
-			usdtTotal, _ = parseFloat(asset.WalletBalance)
-			break
-		}
-	}
+	usdtFree := balance.AvailableBalance
+	usdtTotal := balance.WalletBalance
 
 	// Calculate used margin and usage rate
 	// 计算已用保证金和资金使用率
@@ -1060,6 +1119,15 @@ func (e *BinanceExecutor) withRetry(fn func() error) error {
 			return nil
 		}
 
+		// Business rejections (bad precision, insufficient margin, wrong order
+		// type) produce the identical response every time, so retrying only
+		// burns 14 seconds before failing anyway.
+		// 业务类拒绝（精度错误、保证金不足、订单类型不符）每次都会返回同样的结果，
+		// 重试只会白白消耗 14 秒后依然失败。
+		if !isRetryableBinanceError(err) {
+			return err
+		}
+
 		if i == maxRetries {
 			return fmt.Errorf("max retries reached: %w", err)
 		}
@@ -1075,31 +1143,22 @@ func (e *BinanceExecutor) withRetry(fn func() error) error {
 
 // GetAccountInfo gets account information from Binance
 // GetAccountInfo 从币安获取账户信息
-func (e *BinanceExecutor) GetAccountInfo(ctx context.Context) (*futures.Account, error) {
-	return e.client.NewGetAccountService().Do(ctx)
+//
+// Deprecated in favour of GetAccountBalance; kept as a thin alias so existing
+// callers keep working.
+// 已由 GetAccountBalance 取代；保留为轻量别名以兼容现有调用方。
+func (e *BinanceExecutor) GetAccountInfo(ctx context.Context) (*AccountBalance, error) {
+	return e.GetAccountBalance(ctx)
 }
 
 // GetBalance returns the available USDT balance
 // GetBalance 返回可用的 USDT 余额
 func (e *BinanceExecutor) GetBalance(ctx context.Context) (float64, error) {
-	account, err := e.GetAccountInfo(ctx)
+	balance, err := e.GetAccountBalance(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get account info: %w", err)
+		return 0, err
 	}
-
-	// Find USDT balance
-	// 查找 USDT 余额
-	for _, asset := range account.Assets {
-		if asset.Asset == "USDT" {
-			balance, err := parseFloat(asset.AvailableBalance)
-			if err != nil {
-				return 0, fmt.Errorf("failed to parse balance: %w", err)
-			}
-			return balance, nil
-		}
-	}
-
-	return 0, fmt.Errorf("USDT balance not found")
+	return balance.AvailableBalance, nil
 }
 
 // GetCurrentPrice returns the current market price for a symbol
@@ -1255,69 +1314,58 @@ func (p *Position) GetStopLossHistoryString() string {
 	return result
 }
 
-// AdjustQuantityPrecision adjusts quantity to match symbol's precision requirements
-// AdjustQuantityPrecision 调整数量以符合交易对的精度要求
-func AdjustQuantityPrecision(symbol string, quantity float64) (float64, error) {
-	// Get precision and min quantity for the symbol
-	// 获取交易对的精度和最小数量要求
-	precision, minQty := getSymbolPrecision(symbol)
+// AdjustQuantityPrecision adjusts a quantity to the symbol's real lot size.
+// AdjustQuantityPrecision 按交易对真实的 LOT_SIZE 规则调整下单数量
+//
+// Replaces the previous hardcoded per-symbol table, which covered ten pairs,
+// silently defaulted everything else to two decimals, and still listed
+// delisted contracts. All values now come from GET /fapi/v1/exchangeInfo.
+// 取代之前硬编码的交易对精度表——那张表只覆盖十个交易对，其余一律按两位小数处理，
+// 而且还留着已下架的合约。现在所有数值都来自 GET /fapi/v1/exchangeInfo。
+func (e *BinanceExecutor) AdjustQuantityPrecision(ctx context.Context, symbol string, quantity float64) (float64, error) {
+	filters, err := e.SymbolFilters(ctx, symbol)
+	if err != nil {
+		return 0, err
+	}
 
-	// Round to the required precision
-	// 四舍五入到所需精度
-	multiplier := math.Pow(10, float64(precision))
-	adjusted := math.Round(quantity*multiplier) / multiplier
-
-	// Ensure it meets minimum quantity
-	// 确保满足最小数量要求
-	if adjusted < minQty {
-		return 0, fmt.Errorf("数量 %.4f 低于最小要求 %.4f (交易对: %s)", adjusted, minQty, symbol)
+	adjusted := filters.AdjustQuantity(quantity)
+	if err := filters.ValidateQuantity(adjusted); err != nil {
+		return 0, err
 	}
 
 	return adjusted, nil
 }
 
-// getSymbolPrecision returns the quantity precision and minimum quantity for a symbol
-// getSymbolPrecision 返回交易对的数量精度和最小数量
-func getSymbolPrecision(symbol string) (precision int, minQty float64) {
-	// Default values
-	// 默认值
-	precision = 2
-	minQty = 0.01
+// retryableAPICodes lists the Binance error codes worth retrying.
+// retryableAPICodes 列出值得重试的币安错误码
+//
+// Everything else is a deterministic rejection: the same request will be
+// refused the same way on every attempt.
+// 其余错误都是确定性拒绝：同样的请求每次都会被以同样的理由拒绝。
+var retryableAPICodes = map[int64]bool{
+	-1000: true, // UNKNOWN — transient server-side failure / 服务端瞬时故障
+	-1001: true, // DISCONNECTED
+	-1003: true, // TOO_MANY_REQUESTS
+	-1006: true, // UNEXPECTED_RESP
+	-1007: true, // TIMEOUT
+	-1008: true, // SERVER_BUSY
+	-1016: true, // SERVICE_SHUTTING_DOWN
+	-1021: true, // INVALID_TIMESTAMP — recoverable after a clock resync / 时钟重新同步后可恢复
+}
 
-	// Symbol-specific configurations (based on Binance futures)
-	// 特定交易对的配置（基于币安期货）
-	switch strings.ToUpper(symbol) {
-	case "BTCUSDT", "BTC/USDT":
-		precision = 3 // 0.001 BTC
-		minQty = 0.001
-	case "ETHUSDT", "ETH/USDT":
-		precision = 3 // 0.001 ETH
-		minQty = 0.001
-	case "SOLUSDT", "SOL/USDT":
-		precision = 2 // 0.01 SOL (2025-04-02 更新)
-		minQty = 0.01
-	case "BNBUSDT", "BNB/USDT":
-		precision = 2 // 0.01 BNB
-		minQty = 0.01
-	case "XRPUSDT", "XRP/USDT":
-		precision = 1 // 0.1 XRP
-		minQty = 0.1
-	case "ADAUSDT", "ADA/USDT":
-		precision = 0 // 1 ADA
-		minQty = 1.0
-	case "DOGEUSDT", "DOGE/USDT":
-		precision = 0 // 1 DOGE
-		minQty = 1.0
-	case "DOTUSDT", "DOT/USDT":
-		precision = 1 // 0.1 DOT
-		minQty = 0.1
-	case "MATICUSDT", "MATIC/USDT":
-		precision = 0 // 1 MATIC
-		minQty = 1.0
-	case "AVAXUSDT", "AVAX/USDT":
-		precision = 2 // 0.01 AVAX
-		minQty = 0.1
+// isRetryableBinanceError reports whether an error is worth retrying.
+// isRetryableBinanceError 判断某个错误是否值得重试
+func isRetryableBinanceError(err error) bool {
+	if err == nil {
+		return false
 	}
 
-	return precision, minQty
+	var apiErr *common.APIError
+	if errors.As(err, &apiErr) {
+		return retryableAPICodes[apiErr.Code]
+	}
+
+	// Not an API error: transport/network failure, which is worth another try.
+	// 不是 API 错误，说明是传输/网络故障，值得重试。
+	return true
 }

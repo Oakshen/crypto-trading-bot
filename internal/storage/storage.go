@@ -570,14 +570,27 @@ func (s *Storage) SaveBalanceHistory(balance *BalanceHistory) error {
 // GetBalanceHistory retrieves balance history for the last N hours
 // GetBalanceHistory 获取最近 N 小时的余额历史
 func (s *Storage) GetBalanceHistory(hours int) ([]*BalanceHistory, error) {
+	// SQLite's datetime('now') is UTC, but timestamps are written as local
+	// time.Time values, so comparing the two shifted the window by the local
+	// UTC offset: on a UTC-7 host the 1h and 3h ranges returned nothing and the
+	// dashboard chart came up blank, while 1d silently returned only 17 hours.
+	// Computing the cutoff in Go and binding it as a parameter makes the
+	// comparison use the exact same representation the writer produced.
+	// SQLite 的 datetime('now') 是 UTC 时间，而 timestamp 是以本地时间的
+	// time.Time 写入的，二者比较会产生本地时区偏移量大小的窗口错位：
+	// 在 UTC-7 的主机上，1h 与 3h 范围查不到任何数据，仪表盘图表一片空白，
+	// 而 1d 实际只返回了 17 小时的数据。
+	// 在 Go 侧计算截止时间并作为参数绑定，可确保比较双方使用完全相同的表示形式。
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+
 	query := `
 	SELECT id, timestamp, total_balance, available_balance, unrealized_pnl, positions
 	FROM balance_history
-	WHERE timestamp >= datetime('now', '-' || ? || ' hours')
+	WHERE timestamp >= ?
 	ORDER BY timestamp ASC
 	`
 
-	rows, err := s.db.Query(query, hours)
+	rows, err := s.db.Query(query, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query balance history: %w", err)
 	}
@@ -1080,4 +1093,145 @@ func (s *Storage) GetBatchesWithPagination(offset, limit int) ([]*BatchSession, 
 	}
 
 	return batches, nil
+}
+
+// PerformanceStats summarises how the bot has actually traded.
+// PerformanceStats 汇总机器人的实际交易表现
+//
+// The project's thesis is that returns come from selectivity and a high
+// win/loss ratio rather than a high win rate, so those are the figures the
+// dashboard leads with.
+// 本项目的核心观点是：收益来自极致的选择性与高盈亏比，而非高胜率，
+// 因此仪表盘优先展示这几个指标。
+type PerformanceStats struct {
+	// Decision selectivity / 决策选择性
+	TotalDecisions int     // 决策总数 / Total decisions made
+	TradedCount    int     // 实际下单次数 / Decisions acted on
+	SelectivityPct float64 // 出手率 / Share of decisions acted on
+
+	// Realised outcomes over closed positions / 已平仓的实际结果
+	ClosedCount   int     // 已平仓数 / Closed positions
+	WinCount      int     // 盈利次数 / Winning trades
+	LossCount     int     // 亏损次数 / Losing trades
+	WinRatePct    float64 // 胜率 / Win rate
+	AvgWin        float64 // 平均盈利 / Average winning trade
+	AvgLoss       float64 // 平均亏损（正数）/ Average losing trade (positive)
+	WinLossRatio  float64 // 盈亏比 / Average win divided by average loss
+	RealisedPnL   float64 // 已实现总盈亏 / Total realised PnL
+	BestTrade     float64 // 最佳单笔 / Best single trade
+	WorstTrade    float64 // 最差单笔 / Worst single trade
+	HasClosedData bool    // 是否有已平仓数据 / Whether any closed trade exists
+}
+
+// GetPerformanceStats computes selectivity and realised-outcome statistics.
+// GetPerformanceStats 计算选择性与已实现结果的统计数据
+func (s *Storage) GetPerformanceStats() (*PerformanceStats, error) {
+	stats := &PerformanceStats{}
+
+	// Selectivity comes from the decision log, not the position table: a HOLD
+	// never creates a position, so counting positions would hide exactly the
+	// behaviour we want to show.
+	// 选择性来自决策记录而非持仓表：HOLD 不会产生持仓，
+	// 若以持仓计数，恰恰会隐藏我们想展示的行为。
+	err := s.db.QueryRow(`
+		SELECT COUNT(*), COALESCE(SUM(CASE WHEN executed THEN 1 ELSE 0 END), 0)
+		FROM trading_sessions
+	`).Scan(&stats.TotalDecisions, &stats.TradedCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query decision counts: %w", err)
+	}
+	if stats.TotalDecisions > 0 {
+		stats.SelectivityPct = float64(stats.TradedCount) / float64(stats.TotalDecisions) * 100
+	}
+
+	rows, err := s.db.Query(`
+		SELECT COALESCE(realized_pnl, 0)
+		FROM positions
+		WHERE closed = 1 AND realized_pnl IS NOT NULL
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query closed positions: %w", err)
+	}
+	defer rows.Close()
+
+	var totalWin, totalLoss float64
+	first := true
+	for rows.Next() {
+		var pnl float64
+		if err := rows.Scan(&pnl); err != nil {
+			return nil, fmt.Errorf("failed to scan realised pnl: %w", err)
+		}
+
+		stats.ClosedCount++
+		stats.RealisedPnL += pnl
+
+		if first {
+			stats.BestTrade, stats.WorstTrade, first = pnl, pnl, false
+		}
+		if pnl > stats.BestTrade {
+			stats.BestTrade = pnl
+		}
+		if pnl < stats.WorstTrade {
+			stats.WorstTrade = pnl
+		}
+
+		// Break-even counts as neither a win nor a loss, so it does not
+		// flatter the win rate.
+		// 打平既不算盈利也不算亏损，避免虚增胜率。
+		if pnl > 0 {
+			stats.WinCount++
+			totalWin += pnl
+		} else if pnl < 0 {
+			stats.LossCount++
+			totalLoss += -pnl
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	stats.HasClosedData = stats.ClosedCount > 0
+	if stats.ClosedCount > 0 {
+		stats.WinRatePct = float64(stats.WinCount) / float64(stats.ClosedCount) * 100
+	}
+	if stats.WinCount > 0 {
+		stats.AvgWin = totalWin / float64(stats.WinCount)
+	}
+	if stats.LossCount > 0 {
+		stats.AvgLoss = totalLoss / float64(stats.LossCount)
+	}
+	if stats.AvgLoss > 0 {
+		stats.WinLossRatio = stats.AvgWin / stats.AvgLoss
+	}
+
+	return stats, nil
+}
+
+// GetInitialBalance returns the earliest recorded total balance.
+// GetInitialBalance 返回最早记录的总余额
+//
+// This is the baseline the equity curve and the "since start" figure are drawn
+// against. Deriving it from the first snapshot means it works on existing
+// databases without a migration or a new config value.
+// 这是资产曲线与「自启动以来」数值的基准线。
+// 从第一条快照推导，可在不迁移数据库、不新增配置的情况下适用于现有数据。
+func (s *Storage) GetInitialBalance() (float64, time.Time, error) {
+	var balance float64
+	var ts time.Time
+
+	err := s.db.QueryRow(`
+		SELECT total_balance, timestamp
+		FROM balance_history
+		ORDER BY timestamp ASC
+		LIMIT 1
+	`).Scan(&balance, &ts)
+
+	if err == sql.ErrNoRows {
+		return 0, time.Time{}, nil
+	}
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("failed to query initial balance: %w", err)
+	}
+
+	return balance, ts, nil
 }

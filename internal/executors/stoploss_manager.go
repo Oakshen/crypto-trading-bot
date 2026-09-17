@@ -79,6 +79,17 @@ func (sm *StopLossManager) RegisterPosition(pos *Position) {
 	normalizedSymbol := sm.config.GetBinanceSymbolFor(pos.Symbol)
 	pos.Symbol = normalizedSymbol
 
+	// Overwriting an existing entry used to drop its StopLossOrderID without
+	// cancelling the order, leaving an orphan conditional order on Binance
+	// every time a position was reversed (e.g. BUY while short).
+	// 覆盖已有条目时，之前会直接丢弃它的 StopLossOrderID 而不取消订单，
+	// 导致每次反手（例如持空时 BUY）都在币安上遗留一个孤儿条件单。
+	if old, exists := sm.positions[normalizedSymbol]; exists && old.StopLossOrderID != "" {
+		sm.logger.Warning(fmt.Sprintf("⚠️ 【%s】检测到旧持仓的止损单 %s，注册新持仓前将其取消",
+			normalizedSymbol, old.StopLossOrderID))
+		go sm.cancelOrphanStopLossOrder(old.Symbol, old.StopLossOrderID)
+	}
+
 	pos.HighestPrice = pos.EntryPrice // 初始化最高价/最低价 / Initialize highest/lowest
 	pos.CurrentPrice = pos.EntryPrice
 	pos.StopLossType = "fixed" // LLM 驱动的固定止损 / LLM-driven fixed stop
@@ -874,44 +885,16 @@ func (sm *StopLossManager) CheckStopLossOrderStatus(ctx context.Context, symbol 
 	return nil
 }
 
-// UpdatePosition updates position price and checks if stop-loss should trigger
-// UpdatePosition 更新持仓价格并检查是否应触发止损
-//
-// DEPRECATED: This method is part of the deprecated local monitoring system.
-// 已弃用：此方法是已弃用的本地监控系统的一部分。
-// Use Binance server-side STOP_MARKET orders instead.
-// 请使用币安服务器端 STOP_MARKET 订单。
-func (sm *StopLossManager) UpdatePosition(ctx context.Context, symbol string, currentPrice float64) error {
-	// Normalize symbol to match internal storage format
-	// 标准化符号以匹配内部存储格式
-	normalizedSymbol := sm.config.GetBinanceSymbolFor(symbol)
-
-	sm.mu.Lock()
-	pos, exists := sm.positions[normalizedSymbol]
-	if !exists {
-		sm.mu.Unlock()
-		return nil // 无持仓 / No position
-	}
-	sm.mu.Unlock()
-
-	// Update price
-	// 更新价格
-	pos.UpdatePrice(currentPrice)
-
-	// Check if stop-loss should be triggered (simple fixed stop-loss check)
-	// 检查是否应该触发止损（简单的固定止损检查）
-	if pos.ShouldTriggerStopLoss() {
-		sm.logger.Warning(fmt.Sprintf("【%s】触发止损！当前价: %.2f, 止损价: %.2f",
-			pos.Symbol, pos.CurrentPrice, pos.CurrentStopLoss))
-		return sm.executeStopLoss(ctx, pos)
-	}
-
-	return nil
-}
-
 // placeStopLossOrder places a stop-loss order on Binance
 // placeStopLossOrder 在币安下止损单
 func (sm *StopLossManager) placeStopLossOrder(ctx context.Context, pos *Position, stopPrice float64) error {
+	// The order shape below depends on the position mode, so make sure it is
+	// resolved rather than defaulting to the zero value.
+	// 下面的下单参数取决于持仓模式，因此先确保它已被解析，而不是停留在零值。
+	if err := sm.executor.DetectPositionMode(ctx); err != nil {
+		sm.logger.Warning(fmt.Sprintf("⚠️  无法确认持仓模式: %v，按单向模式下止损单", err))
+	}
+
 	// Get current market price for validation
 	// 获取当前市场价格用于验证
 	currentPrice, err := sm.getCurrentPrice(ctx, pos.Symbol)
@@ -946,6 +929,20 @@ func (sm *StopLossManager) placeStopLossOrder(ctx context.Context, pos *Position
 
 	binanceSymbol := sm.config.GetBinanceSymbolFor(pos.Symbol)
 
+	// Snap the trigger price onto the symbol's tick size and the quantity onto
+	// its step size. Formatting these with fixed %.2f / %.4f used to reject the
+	// order outright on tick sizes like BTCUSDT's 0.1, and on low-priced coins
+	// it quietly rounded the stop to a completely different level
+	// (DOGE 0.12345 -> 0.12, a 2.8% shift).
+	// 将触发价对齐到交易对的 tickSize、数量对齐到 stepSize。
+	// 之前用固定的 %.2f / %.4f 格式化，在 BTCUSDT 这类 tickSize=0.1 的合约上会被直接拒单；
+	// 而在低价币上则会悄悄把止损价舍入到完全不同的价位
+	// （DOGE 0.12345 -> 0.12，偏移 2.8%）。
+	filters, err := sm.executor.SymbolFilters(ctx, pos.Symbol)
+	if err != nil {
+		return fmt.Errorf("无法获取 %s 的交易规则: %w", pos.Symbol, err)
+	}
+
 	// Create stop-loss order using Algo Order API
 	// 使用 Algo Order API 创建止损单
 	// CRITICAL FIX (error -4120): All conditional orders (STOP, STOP_MARKET, TAKE_PROFIT, etc.)
@@ -958,15 +955,32 @@ func (sm *StopLossManager) placeStopLossOrder(ctx context.Context, pos *Position
 	// - New endpoint: POST /fapi/v1/algoOrder (REQUIRED for all conditional orders)
 	// - Use TriggerPrice instead of StopPrice
 	// - Use AlgoOrderTypeStopMarket instead of OrderTypeStopMarket
-	order, err := sm.executor.client.NewCreateAlgoOrderService().
+	orderService := sm.executor.client.NewCreateAlgoOrderService().
 		Symbol(binanceSymbol).
 		Side(orderSide).
-		Type(futures.AlgoOrderTypeStopMarket).        // Use Algo Order Type
-		TriggerPrice(fmt.Sprintf("%.2f", stopPrice)). // Use TriggerPrice instead of StopPrice
-		Quantity(fmt.Sprintf("%.4f", pos.Quantity)).
-		ReduceOnly(true). // 只平仓不开仓 / Close only
-		Do(ctx)
+		Type(futures.AlgoOrderTypeStopMarket).
+		TriggerPrice(filters.FormatStopPrice(stopPrice, pos.Side)).
+		Quantity(filters.FormatQuantity(pos.Quantity))
 
+	// positionSide is mandatory in Hedge Mode, and reduceOnly is forbidden there
+	// ("Cannot be sent in Hedge Mode"). Sending the One-way defaults into a
+	// Hedge account failed every stop-loss with -1106 / -4061.
+	// 双向持仓模式下 positionSide 是必填项，而 reduceOnly 在该模式下被禁止
+	// （"Cannot be sent in Hedge Mode"）。此前按单向模式的默认值发送，
+	// 会让双向持仓账户的每一笔止损单都因 -1106 / -4061 失败。
+	if sm.executor.positionMode == PositionModeHedge {
+		positionSide := futures.PositionSideTypeLong
+		if pos.Side == "short" {
+			positionSide = futures.PositionSideTypeShort
+		}
+		orderService = orderService.PositionSide(positionSide)
+	} else {
+		orderService = orderService.
+			PositionSide(futures.PositionSideTypeBoth).
+			ReduceOnly(true) // 只平仓不开仓 / Close only
+	}
+
+	order, err := orderService.Do(ctx)
 	if err != nil {
 		return fmt.Errorf("下止损单失败: %w", err)
 	}
@@ -976,8 +990,8 @@ func (sm *StopLossManager) placeStopLossOrder(ctx context.Context, pos *Position
 	if sm.executor.testMode {
 		modeLabel = "🧪 [测试网] "
 	}
-	sm.logger.Success(fmt.Sprintf("%s【%s】止损单已下达(Algo): 触发价=%.2f (Algo ID: %s, 当前价: %.2f)",
-		modeLabel, pos.Symbol, stopPrice, pos.StopLossOrderID, currentPrice))
+	sm.logger.Success(fmt.Sprintf("%s【%s】止损单已下达(Algo): 触发价=%s (Algo ID: %s, 当前价: %.2f)",
+		modeLabel, pos.Symbol, filters.FormatStopPrice(stopPrice, pos.Side), pos.StopLossOrderID, currentPrice))
 
 	return nil
 }
@@ -1019,93 +1033,28 @@ func (sm *StopLossManager) cancelStopLossOrder(ctx context.Context, pos *Positio
 	return nil
 }
 
-// executeStopLoss executes stop-loss (close position)
-// executeStopLoss 执行止损（平仓）
+// cancelOrphanStopLossOrder cancels a stop-loss order left behind by a replaced position.
+// cancelOrphanStopLossOrder 取消被替换掉的持仓所遗留的止损单
 //
-// DEPRECATED: This method is part of the deprecated local monitoring system.
-// 已弃用：此方法是已弃用的本地监控系统的一部分。
-// Binance STOP_MARKET orders handle stop-loss execution automatically.
-// 币安 STOP_MARKET 订单会自动处理止损执行。
-func (sm *StopLossManager) executeStopLoss(ctx context.Context, pos *Position) error {
-	sm.logger.Warning(fmt.Sprintf("【%s】🛑 执行止损平仓", pos.Symbol))
+// Runs detached from the caller's lock, and failure is only logged: the new
+// position must still be registered even if the stale order cannot be removed.
+// 与调用方的锁解耦执行，失败仅记录日志：
+// 即使旧订单无法取消，新持仓也必须完成注册。
+func (sm *StopLossManager) cancelOrphanStopLossOrder(symbol, algoID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
-	// Close position via market order
-	// 通过市价单平仓
-	action := ActionCloseLong
-	if pos.Side == "short" {
-		action = ActionCloseShort
+	_, err := sm.executor.client.NewCancelAlgoOrderService().
+		AlgoID(parseInt64(algoID)).
+		Do(ctx)
+
+	if err != nil {
+		sm.logger.Warning(fmt.Sprintf("⚠️ 【%s】取消遗留止损单 %s 失败: %v（请手动检查币安挂单）",
+			symbol, algoID, err))
+		return
 	}
 
-	result := sm.executor.ExecuteTrade(ctx, pos.Symbol, action, pos.Quantity, "触发止损")
-
-	if result.Success {
-		sm.logger.Success(fmt.Sprintf("【%s】止损平仓成功，盈亏: %.2f%%",
-			pos.Symbol, pos.GetUnrealizedPnL()*100))
-		sm.RemovePosition(pos.Symbol)
-	} else {
-		sm.logger.Error(fmt.Sprintf("【%s】止损平仓失败: %s", pos.Symbol, result.Message))
-		return fmt.Errorf("止损平仓失败: %s", result.Message)
-	}
-
-	return nil
-}
-
-// MonitorPositions monitors all positions in real-time (every 10 seconds)
-// MonitorPositions 实时监控所有持仓（每 10 秒）
-//
-// DEPRECATED: This method is deprecated and should NOT be used with fixed stop-loss strategy.
-// 已弃用：此方法已弃用，不应与固定止损策略一起使用。
-//
-// Reason: With Binance server-side STOP_MARKET orders, local monitoring is redundant and can cause issues:
-// 原因：使用币安服务器端 STOP_MARKET 订单时，本地监控是多余的，可能导致问题：
-//  1. Duplicate execution: Both Binance and local monitoring may try to close the position
-//     重复执行：币安和本地监控可能都尝试平仓
-//  2. API overhead: Polling price every 10 seconds for all positions
-//     API 开销：每 10 秒为所有持仓轮询价格
-//  3. Slower than Binance: 10s polling vs millisecond server-side trigger
-//     比币安慢：10 秒轮询 vs 毫秒级服务器端触发
-//  4. Reliability: Depends on local program uptime and network stability
-//     可靠性：依赖本地程序运行和网络稳定性
-//
-// For fixed stop-loss strategy, rely entirely on Binance STOP_MARKET orders placed via PlaceInitialStopLoss().
-// 对于固定止损策略，完全依赖通过 PlaceInitialStopLoss() 下达的币安 STOP_MARKET 订单。
-func (sm *StopLossManager) MonitorPositions(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	sm.logger.Info(fmt.Sprintf("🔍 启动持仓监控，间隔: %v", interval))
-
-	for {
-		select {
-		case <-sm.ctx.Done():
-			sm.logger.Info("持仓监控已停止")
-			return
-
-		case <-ticker.C:
-			sm.mu.RLock()
-			positions := make([]*Position, 0, len(sm.positions))
-			for _, pos := range sm.positions {
-				positions = append(positions, pos)
-			}
-			sm.mu.RUnlock()
-
-			for _, pos := range positions {
-				// Get latest price from Binance
-				// 从币安获取最新价格
-				currentPrice, err := sm.getCurrentPrice(sm.ctx, pos.Symbol)
-				if err != nil {
-					sm.logger.Warning(fmt.Sprintf("获取 %s 价格失败: %v", pos.Symbol, err))
-					continue
-				}
-
-				// Update position and check stop-loss trigger
-				// 更新持仓并检查止损触发
-				if err := sm.UpdatePosition(sm.ctx, pos.Symbol, currentPrice); err != nil {
-					sm.logger.Error(fmt.Sprintf("更新 %s 持仓失败: %v", pos.Symbol, err))
-				}
-			}
-		}
-	}
+	sm.logger.Success(fmt.Sprintf("✅【%s】遗留止损单已取消: %s", symbol, algoID))
 }
 
 // getCurrentPrice gets current price from Binance

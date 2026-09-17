@@ -1,0 +1,884 @@
+/* =========================================================================
+   Crypto-Trading-Bot — "Inverted amber terminal"
+   加密货币交易机器人 — 「反相琥珀终端」
+
+   Finance terminals were amber phosphor on black. Inverted — dark ink on pale
+   amber paper — it reads as a ruled trading ledger, which is where this
+   interface's pale yellow comes from rather than a generic cream.
+   金融终端曾是黑底琥珀磷光。将其反相——浅琥珀纸上的深色墨水——
+   便呈现出带横线的交易账簿质感，这正是本界面浅黄色的由来，
+   而非一般意义上的米白。
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. Tokens / 设计令牌
+   ------------------------------------------------------------------------- */
+:root {
+    /* Surfaces — the amber is the PAGE; content sits on near-white cards that
+       lift off it. Making page, panels and tables all amber produced a wall of
+       yellow with only 1.07 separation between surfaces, so nothing read as
+       distinct and long text was tiring.
+       表面——琥珀色只用于页面背景；内容位于浮起的近白色卡片上。
+       此前页面、面板、表格全为琥珀色，各表面之间的对比度仅 1.07，
+       彼此无法区分，长文本因此读起来很吃力。 */
+    --paper:      #FBF5E0;  /* page / 页面 */
+    --paper-2:    #FFFDF5;  /* content cards, lifted / 内容卡片（浮起） */
+    --paper-3:    #F5EDD2;  /* wells, table headers / 凹槽、表头 */
+    --paper-edge: #FFFFFF;  /* inputs / 输入框 */
+
+    /* Rules / 分隔线 */
+    --rule:      #D1C187;
+    --rule-soft: #E3D6A6;
+    --rule-firm: #C0AC6A;
+
+    /* Ink — every step is solved against the worst surface it appears on, not
+       chosen by eye. The previous --ink-3 measured 3.09:1 on table headers and
+       carried both labels and the decision tape's reason text, i.e. the page's
+       primary content was its least legible type.
+       墨色——每一档都是针对其出现的最差表面计算得出，而非凭肉眼选取。
+       此前的 --ink-3 在表头上实测仅 3.09:1，却同时承担标签与决策理由文本，
+       即页面的主要内容反而是最难阅读的文字。 */
+    --ink:   #2B2405;  /* 13.3:1 */
+    --ink-2: #463F1B;  /*  9.0:1 */
+    --ink-3: #564F2E;  /*  7.0:1 — WCAG AAA for body text / 正文达到 AAA */
+    --ink-4: #736C49;  /*  4.5:1 — non-essential only / 仅用于非必要信息 */
+
+    /* Data — conventional green/red, which is safe here only because figures
+       themselves carry no colour: every number is ink and states its own sign,
+       so green/red never has to be distinguished to read a value. Colour only
+       reinforces markers that already carry a word (多头/空头, 买入/卖出).
+       数据色——采用惯常的绿/红。之所以安全，是因为数值本身不着色：
+       每个数字都是墨色并自带正负号，读取数值时无需分辨绿与红。
+       颜色仅用于强化那些本身已有文字的标记（多头/空头、买入/卖出）。 */
+    --gain:      #1B6B3A;
+    --gain-wash: rgba(27, 107, 58, 0.11);
+    --loss:      #A81E12;
+    --loss-wash: rgba(168, 30, 18, 0.10);
+
+    /* Hold is the absence of action: muted, never coloured
+       观望代表不行动：一律弱化，不着色 */
+    --hold: #6D643A;
+
+    --radius:   10px;
+    --radius-s: 6px;
+
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --fast: 120ms var(--ease);
+
+    /* One family. Weight and width carry the hierarchy.
+       仅用一个字族，由字重与字宽承担层级。 */
+    --font: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+            "Microsoft YaHei", sans-serif;
+}
+
+/* -------------------------------------------------------------------------
+   2. Base / 基础
+   ------------------------------------------------------------------------- */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--ink);
+    background: var(--paper);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+}
+
+a { color: var(--ink); text-decoration: none; }
+
+button, input, select { font-family: inherit; font-size: inherit; color: inherit; }
+button { cursor: pointer; border: none; background: none; }
+
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.012em; line-height: 1.25; }
+
+:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+::selection { background: rgba(27, 107, 58, 0.18); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--rule-firm) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+    background: var(--rule-firm);
+    border: 3px solid var(--paper);
+    border-radius: 99px;
+}
+
+/* Numerals: proportional for display figures, tabular only inside columns
+   数字：展示型数值用比例字形，仅在表格列中使用等宽字形 */
+table, .num-col, .tape-time, .meter-value { font-variant-numeric: tabular-nums; }
+
+.container {
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 28px 56px;
+}
+
+/* -------------------------------------------------------------------------
+   3. Masthead / 页眉
+   Thin and quiet: it is signage, not content.
+   克制的细条：它是标识，不是内容。
+   ------------------------------------------------------------------------- */
+.masthead {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 18px 0 14px;
+    border-bottom: 1px solid var(--rule-firm);
+    margin-bottom: 28px;
+}
+
+.wordmark {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+}
+
+.masthead-pairs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.pair-chip {
+    padding: 2px 9px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 99px;
+}
+
+.masthead-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--ink-3);
+}
+
+.masthead-meta b { color: var(--ink-2); font-weight: 600; }
+
+/* Live/test state reads from a dot plus a word, never colour alone
+   运行状态由圆点加文字共同表达，不依赖颜色 */
+.state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.state::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ink-3);
+}
+.state-live::before { background: var(--loss); }
+.state-test::before { background: var(--gain); }
+
+.masthead-actions { display: flex; gap: 8px; }
+
+/* -------------------------------------------------------------------------
+   4. Buttons / 按钮
+   ------------------------------------------------------------------------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--paper-2);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius-s);
+    transition: background var(--fast), border-color var(--fast);
+}
+.btn:hover { background: var(--paper-3); }
+
+.btn-primary {
+    color: var(--paper-edge);
+    background: var(--ink);
+    border-color: var(--ink);
+}
+.btn-primary:hover { background: #3b3209; }
+
+.btn-quiet { background: transparent; border-color: transparent; color: var(--ink-3); }
+.btn-quiet:hover { color: var(--ink); background: var(--paper-2); }
+
+/* -------------------------------------------------------------------------
+   5. Section headings / 区块标题
+   Sentence case, no tracked-out caps, no eyebrow labels.
+   句首大写，不使用拉开字距的全大写，也不加装饰性标签。
+   ------------------------------------------------------------------------- */
+.section {
+    margin-bottom: 34px;
+}
+
+.section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--rule);
+}
+
+.section-head h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.section-note { font-size: 13px; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   6. Equity band — the one bold element
+   资产区 —— 全页唯一的强视觉元素
+   The number and its curve are one object, not a figure and a separate card.
+   数值与曲线是同一个对象，而非一个数字加一张独立卡片。
+   ------------------------------------------------------------------------- */
+.equity {
+    display: grid;
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    gap: 32px;
+    align-items: end;
+    padding: 4px 0 24px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 34px;
+}
+
+.equity-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-3);
+    margin-bottom: 2px;
+}
+
+.equity-value {
+    font-size: clamp(46px, 6.4vw, 78px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 0.95;
+    color: var(--ink);
+}
+
+.equity-delta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.equity-delta .since { font-size: 13px; font-weight: 400; color: var(--ink-3); }
+
+/* Figures stay ink and state their own sign. Colouring every number made the
+   page noisy and put weight on hue to read a value; the sign does that job
+   without it.
+   数值保持墨色并自带正负号。给每个数字着色会让页面显得嘈杂，
+   并迫使读者依赖色相来判断数值；正负号本身即可完成这项工作。 */
+.up,
+.down { color: var(--ink); }
+.flat { color: var(--ink-3); }
+
+.equity-chart { position: relative; min-height: 190px; }
+.equity-chart canvas { display: block; }
+
+.range {
+    display: flex;
+    gap: 2px;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.range button {
+    padding: 4px 11px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-3);
+    border-radius: var(--radius-s);
+    transition: color var(--fast), background var(--fast);
+}
+.range button:hover { color: var(--ink); background: var(--paper-2); }
+.range button.active { color: var(--paper-edge); background: var(--ink); }
+
+/* -------------------------------------------------------------------------
+   7. Positions — risk, with distance to stop
+   持仓 —— 风险，含距离止损的远近
+   ------------------------------------------------------------------------- */
+.positions { display: flex; flex-direction: column; gap: 2px; }
+
+.position {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
+    gap: 18px;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 0 rgba(43, 36, 5, 0.04);
+}
+
+.position-id { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+
+.position-symbol { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+
+/* Direction is a word first; the colour only reinforces it
+   方向首先由文字表达，颜色只作强化 */
+.side {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 3px;
+}
+.side-long  { color: var(--gain); background: var(--gain-wash); }
+.side-short { color: var(--loss); background: var(--loss-wash); }
+
+.field-label { font-size: 12px; color: var(--ink-3); margin-bottom: 1px; }
+.field-value { font-size: 14.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Stop meter: the fill is how much room is left before the stop triggers.
+   止损计量条：填充部分表示触发止损前还剩多少空间。
+   Track is a lighter step of the same ink so state reads across the whole bar.
+   轨道使用同色系更浅的一档，使状态在整条上都可读。 */
+.stop-meter { display: flex; flex-direction: column; gap: 5px; }
+
+.meter-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--ink-3);
+}
+.meter-value { font-weight: 600; color: var(--ink-2); }
+
+.meter-track {
+    position: relative;
+    height: 6px;
+    background: var(--paper-3);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 99px;
+    background: var(--gain);
+}
+/* Close to the stop is a warning state, so it changes hue and says so in text
+   接近止损属于警示状态，因此同时改变色相并以文字说明 */
+.meter-fill.near { background: var(--loss); }
+
+/* -------------------------------------------------------------------------
+   8. Decision tape — the spine of the page
+   决策带 —— 页面的主干
+   Holds are shown, quietly. Hiding them hides the selectivity that is the
+   entire point of the strategy.
+   观望决策会被显示，只是弱化。隐藏它们等于隐藏了该策略的全部要义。
+   ------------------------------------------------------------------------- */
+.split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 34px;
+    align-items: start;
+}
+
+.tape { display: flex; flex-direction: column; }
+
+.tape-batch {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule-soft);
+}
+.tape-batch:last-child { border-bottom: none; }
+
+.tape-time {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-3);
+    padding-top: 2px;
+}
+
+.tape-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.tape-row {
+    display: grid;
+    grid-template-columns: 92px 72px minmax(0, 1fr);
+    gap: 12px;
+    align-items: baseline;
+    padding: 5px 8px;
+    margin: 0 -8px;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    transition: background var(--fast);
+}
+.tape-row:hover { background: var(--paper-2); }
+
+.tape-symbol { font-size: 14px; font-weight: 600; }
+
+.verdict { font-size: 13px; font-weight: 700; }
+.verdict-buy   { color: var(--gain); }
+.verdict-sell  { color: var(--loss); }
+.verdict-close { color: var(--ink-2); }
+.verdict-hold  { color: var(--hold); font-weight: 500; }
+
+/* The rationale is what the row is for, so it gets body ink, not label ink.
+   理由是该行存在的意义，因此使用正文墨色而非标签墨色。 */
+.tape-reason {
+    font-size: 13.5px;
+    color: var(--ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A held decision recedes; an acted one keeps full ink
+   观望的决策后退；已执行的保持完整墨色 */
+.tape-row.held .tape-symbol { font-weight: 500; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   9. Discipline panel — how the bot behaved
+   纪律面板 —— 机器人的行为表现
+   ------------------------------------------------------------------------- */
+.discipline {
+    padding: 20px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+}
+
+.stat { padding: 14px 0; border-bottom: 1px solid var(--rule-soft); }
+.stat:first-child { padding-top: 0; }
+.stat:last-child { padding-bottom: 0; border-bottom: none; }
+
+.stat-label { font-size: 13px; color: var(--ink-3); margin-bottom: 3px; }
+
+.stat-value {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+}
+
+.stat-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+
+/* Selectivity tape: one mark per decision — filled when acted on, hollow when
+   held. A row of marks shows the trade/hold rhythm at a glance, which a
+   percentage alone cannot.
+   选择性带：每个决策一个标记——已执行为实心，观望为空心。
+   一排标记可一眼看出出手与观望的节奏，这是单一百分比无法表达的。 */
+.tally {
+    display: flex;
+    gap: 3px;
+    margin-top: 10px;
+}
+
+/* Marks share the row rather than wrapping, so the trade/hold rhythm stays one
+   readable band at any history length.
+   标记在同一行内平分宽度而非换行，使出手/观望的节奏在任意历史长度下
+   都保持为一条可读的带。 */
+.tally i {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 14px;
+    border-radius: 1.5px;
+    background: var(--paper-3);
+    box-shadow: inset 0 0 0 1px var(--rule-firm);
+}
+.tally i.acted { background: var(--ink); box-shadow: none; }
+
+/* -------------------------------------------------------------------------
+   10. Empty states — an invitation, not an apology
+   空状态 —— 是引导，而非致歉
+   ------------------------------------------------------------------------- */
+.empty {
+    padding: 26px 18px;
+    font-size: 14px;
+    color: var(--ink-3);
+    background: var(--paper-2);
+    border: 1px dashed var(--rule-firm);
+    border-radius: var(--radius);
+}
+.empty b { display: block; color: var(--ink-2); font-weight: 600; margin-bottom: 3px; }
+
+/* -------------------------------------------------------------------------
+   11. Tables (trade history) / 表格（交易历史）
+   ------------------------------------------------------------------------- */
+.batch {
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 14px;
+    background: var(--paper-2);
+}
+
+.batch-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--ink-3);
+    background: var(--paper-3);
+    border-bottom: 1px solid var(--rule);
+}
+.batch-head b { color: var(--ink-2); font-weight: 600; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+
+thead th {
+    padding: 9px 16px;
+    text-align: left;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    color: var(--ink-2);
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--paper-3); }
+
+.link {
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: underline;
+    text-decoration-color: var(--rule-firm);
+    text-underline-offset: 3px;
+}
+.link:hover { color: var(--ink); text-decoration-color: currentColor; }
+
+/* -------------------------------------------------------------------------
+   12. Pagination / 分页
+   ------------------------------------------------------------------------- */
+.pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    padding-top: 22px;
+    margin-top: 6px;
+    border-top: 1px solid var(--rule);
+}
+
+.pager a, .pager span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-s);
+    background: var(--paper-2);
+}
+.pager a:hover { background: var(--paper-3); border-color: var(--rule-firm); }
+.pager .current { color: var(--paper-edge); background: var(--ink); border-color: var(--ink); }
+.pager .disabled { color: var(--ink-4); background: transparent; border-color: var(--rule-soft); }
+
+/* -------------------------------------------------------------------------
+   13. Session detail / 会话详情
+   ------------------------------------------------------------------------- */
+.detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    padding: 16px 0 20px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 26px;
+}
+
+.meta-item { font-size: 14px; }
+.meta-item .field-label { margin-bottom: 2px; }
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 24px;
+}
+
+.tab {
+    padding: 6px 13px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-3);
+    border-radius: var(--radius-s);
+    transition: color var(--fast), background var(--fast);
+}
+.tab:hover { color: var(--ink); background: var(--paper-2); }
+.tab.active { color: var(--paper-edge); background: var(--ink); }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Long-form report text: measure capped for readability
+   长文报告：限制每行字数以保证可读性 */
+.report { max-width: 74ch; font-size: 15px; line-height: 1.7; color: var(--ink-2); }
+
+.report h1, .report h2, .report h3, .report h4 {
+    margin: 26px 0 10px;
+    color: var(--ink);
+}
+.report h1 { font-size: 21px; }
+.report h2 { font-size: 18px; }
+.report h3 { font-size: 16px; }
+.report h4 { font-size: 15px; }
+.report > *:first-child { margin-top: 0; }
+
+.report p { margin-bottom: 13px; }
+.report ul, .report ol { margin: 0 0 13px 20px; }
+.report li { margin-bottom: 5px; }
+.report strong { color: var(--ink); font-weight: 600; }
+.report a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+.report code {
+    padding: 1px 5px;
+    font-size: 0.9em;
+    background: var(--paper-3);
+    border-radius: 3px;
+}
+
+.report pre {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-s);
+}
+.report pre code { padding: 0; background: none; font-size: 13px; line-height: 1.65; }
+
+.report blockquote {
+    margin: 0 0 16px;
+    padding: 2px 0 2px 16px;
+    color: var(--ink-2);
+    border-left: 2px solid var(--ink);
+}
+
+.report table {
+    max-width: 100%;
+    margin-bottom: 16px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-s);
+    overflow: hidden;
+}
+.report table th { background: var(--paper-3); }
+.report table td { font-variant-numeric: tabular-nums; }
+
+.loading { padding: 40px 0; font-size: 14px; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   14. Modal / 模态框
+   ------------------------------------------------------------------------- */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(43, 36, 5, 0.32);
+}
+.modal.active { display: flex; }
+
+.modal-card {
+    width: 100%;
+    max-width: 460px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius);
+    box-shadow: 0 24px 60px -20px rgba(43, 36, 5, 0.45);
+    overflow: hidden;
+}
+
+.modal-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--rule);
+}
+.modal-head h2 { font-size: 16px; }
+
+.modal-body { padding: 20px; }
+
+.modal-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 20px;
+    background: var(--paper-3);
+    border-top: 1px solid var(--rule);
+}
+
+/* -------------------------------------------------------------------------
+   15. Forms / 表单
+   ------------------------------------------------------------------------- */
+.field { margin-bottom: 16px; }
+.field:last-child { margin-bottom: 0; }
+
+.field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.field input, .field select, .select {
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--paper-edge);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius-s);
+    appearance: none;
+    transition: border-color var(--fast), box-shadow var(--fast);
+}
+
+.field select, .select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235C5324' stroke-width='1.6'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 15px;
+    padding-right: 32px;
+    cursor: pointer;
+}
+
+.field input:focus, .field select:focus, .select:focus {
+    outline: none;
+    border-color: var(--ink-2);
+    box-shadow: 0 0 0 3px rgba(70, 63, 27, 0.12);
+}
+
+.field-hint { margin-top: 8px; font-size: 12.5px; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   16. Toast / 提示
+   ------------------------------------------------------------------------- */
+.toast {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 200;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--paper-edge);
+    background: var(--ink);
+    border-radius: var(--radius-s);
+    box-shadow: 0 12px 32px -12px rgba(43, 36, 5, 0.6);
+}
+.toast-error { background: var(--loss); }
+
+/* -------------------------------------------------------------------------
+   17. Login / 登录
+   ------------------------------------------------------------------------- */
+body.login { display: grid; place-items: center; padding: 24px; }
+
+.login-card {
+    width: 100%;
+    max-width: 370px;
+    padding: 34px 30px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule-firm);
+    border-radius: var(--radius);
+}
+
+.login-card h1 { font-size: 19px; margin-bottom: 4px; }
+.login-card .sub { font-size: 13.5px; color: var(--ink-3); margin-bottom: 24px; }
+.login-card .btn { width: 100%; justify-content: center; padding: 10px; margin-top: 4px; }
+
+.notice {
+    padding: 10px 13px;
+    margin-bottom: 18px;
+    font-size: 13.5px;
+    color: var(--loss);
+    background: var(--loss-wash);
+    border-left: 2px solid var(--loss);
+    border-radius: 0 var(--radius-s) var(--radius-s) 0;
+}
+
+.login-foot { margin-top: 20px; font-size: 12.5px; line-height: 1.55; color: var(--ink-3); }
+
+/* -------------------------------------------------------------------------
+   18. Responsive / 响应式
+   ------------------------------------------------------------------------- */
+@media (max-width: 1080px) {
+    .split { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    .position { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+    .stop-meter { grid-column: 1 / -1; }
+}
+
+/* The curve needs room to be readable; below this the number and the chart
+   stack instead of splitting a narrow row.
+   曲线需要足够宽度才可读；低于此宽度时数值与图表改为上下堆叠，
+   而不是挤在一行内。 */
+@media (max-width: 880px) {
+    .equity {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 22px;
+        align-items: stretch;
+    }
+    .equity-chart { min-height: 170px; }
+    .range { justify-content: flex-start; }
+}
+
+@media (max-width: 720px) {
+    .container { padding: 0 16px 40px; }
+    .masthead-meta { margin-left: 0; width: 100%; }
+    .tape-batch { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .tape-row { grid-template-columns: 84px 1fr; }
+    .tape-reason { grid-column: 1 / -1; white-space: normal; }
+    .batch { overflow-x: auto; }
+    table { min-width: 660px; }
+    .report { max-width: none; }
+}
+
+/* -------------------------------------------------------------------------
+   19. Motion / 动效
+   Motion answers an action; nothing animates on load.
+   动效只回应用户操作；加载时不做任何动画。
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}

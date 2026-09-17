@@ -99,6 +99,17 @@ func main() {
 
 	ctx := context.Background()
 
+	// Load exchange trading rules and sync the signing clock
+	// 加载交易规则并同步签名用的时钟
+	// Every order is formatted against exchangeInfo, so this must succeed before
+	// the first trade rather than lazily mid-execution.
+	// 每一笔订单都按 exchangeInfo 格式化，因此必须在第一笔交易之前完成，
+	// 而不是在执行过程中延迟加载。
+	log.Subheader("初始化币安交易规则", '─', 80)
+	if err := executor.Init(ctx); err != nil {
+		log.Warning(fmt.Sprintf("⚠️  初始化交易规则失败: %v（下单时会重试）", err))
+	}
+
 	// Initialize and verify LLM service
 	// 初始化并验证 LLM 服务
 	log.Subheader("验证 LLM 服务", '─', 80)

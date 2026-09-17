@@ -3,480 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> 会话详情 #{{.Session.ID}} - Crypto-Trading-Bot</title>
+    <title>会话 #{{.Session.ID}} - Crypto-Trading-Bot</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-            background: #1a1d26;
-            color: #e4e7eb;
-            line-height: 1.6;
-            padding: 20px;
-            zoom: 0.9;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            padding: 25px;
-            border-radius: 15px;
-            margin-bottom: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-        }
-
-        .header-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        h1 {
-            color: #fff;
-            font-size: 2em;
-        }
-
-        .back-button {
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-
-        .back-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-        }
-
-        .session-info {
-            display: flex;
-            gap: 30px;
-            flex-wrap: wrap;
-            margin-top: 15px;
-        }
-
-        .info-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.95em;
-        }
-
-        .info-item strong {
-            color: #9ca3af;
-        }
-
-        .badge {
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.85em;
-            font-weight: 600;
-        }
-
-        .badge-success {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-        }
-
-        .badge-warning {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: white;
-        }
-
-        .badge-info {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-        }
-
-        .action-badge {
-            display: inline-block;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9em;
-            letter-spacing: 0.5px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        }
-
-        .action-buy {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-        }
-
-        .action-sell {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-        }
-
-        .action-close {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: white;
-        }
-
-        .action-hold {
-            background: linear-gradient(135deg, #6b7280, #4b5563);
-            color: white;
-        }
-
-        .action-unknown {
-            background: linear-gradient(135deg, #9ca3af, #6b7280);
-            color: white;
-        }
-
-        .tabs-container {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-            overflow: hidden;
-        }
-
-        .tabs {
-            display: flex;
-            background: #2d3142;
-            border-bottom: 2px solid #3b4054;
-        }
-
-        .tab {
-            flex: 1;
-            padding: 18px 25px;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: 600;
-            color: #9ca3af;
-            transition: all 0.2s;
-            position: relative;
-        }
-
-        .tab:hover {
-            background: rgba(59, 130, 246, 0.1);
-            color: #3b82f6;
-        }
-
-        .tab.active {
-            background: #1e2332;
-            color: #3b82f6;
-        }
-
-        .tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, #3b82f6, #2563eb);
-        }
-
-        .tab-content {
-            padding: 30px;
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .report-content {
-            background: #2d3142;
-            padding: 25px;
-            border-radius: 10px;
-            border-left: 4px solid #3b82f6;
-            min-height: 400px;
-            color: #e4e7eb;
-        }
-
-        .report-content h1,
-        .report-content h2,
-        .report-content h3,
-        .report-content h4 {
-            color: #3b82f6;
-            margin-top: 20px;
-            margin-bottom: 10px;
-        }
-
-        .report-content h1 {
-            font-size: 1.8em;
-            border-bottom: 2px solid #3b4054;
-            padding-bottom: 10px;
-        }
-
-        .report-content h2 {
-            font-size: 1.5em;
-        }
-
-        .report-content h3 {
-            font-size: 1.2em;
-        }
-
-        .report-content p {
-            margin: 10px 0;
-            line-height: 1.8;
-        }
-
-        .report-content ul,
-        .report-content ol {
-            margin: 15px 0;
-            padding-left: 30px;
-        }
-
-        .report-content li {
-            margin: 8px 0;
-        }
-
-        .report-content strong {
-            color: #fff;
-            font-weight: 700;
-        }
-
-        .report-content code {
-            background: #1a1d26;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            color: #ef4444;
-        }
-
-        .report-content pre {
-            background: #1a1d26;
-            color: #e4e7eb;
-            padding: 15px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 15px 0;
-        }
-
-        .report-content pre code {
-            background: transparent;
-            color: #e4e7eb;
-            padding: 0;
-        }
-
-        .report-content blockquote {
-            border-left: 4px solid #3b82f6;
-            padding-left: 15px;
-            margin: 15px 0;
-            color: #9ca3af;
-            font-style: italic;
-        }
-
-        .report-content table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-        }
-
-        .report-content table th,
-        .report-content table td {
-            border: 1px solid #3b4054;
-            padding: 12px;
-            text-align: left;
-        }
-
-        .report-content table th {
-            background: #2d3142;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .report-content table tr:hover {
-            background: rgba(59, 130, 246, 0.05);
-        }
-
-        .report-content a {
-            color: #3b82f6;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .report-content a:hover {
-            text-decoration: underline;
-        }
-
-        .empty-content {
-            text-align: center;
-            padding: 60px 20px;
-            color: #6b7280;
-            font-size: 1.1em;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #9ca3af;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 30px;
-            height: 30px;
-            border: 3px solid #3b4054;
-            border-top-color: #3b82f6;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        /* 滚动条样式 */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #1a1d26;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #3b4054;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #4b5563;
-        }
-    </style>
-    <!-- Marked.js for Markdown rendering -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="header-top">
-                <h1>📊 会话详情 #{{.Session.ID}}</h1>
-                <a href="/" class="back-button">← 返回主页</a>
-            </div>
-            <div class="session-info">
-                <div class="info-item">
-                    <strong>交易对:</strong>
-                    <span class="badge badge-info">{{.Session.Symbol}}</span>
-                </div>
-                <div class="info-item">
-                    <strong>时间周期:</strong>
-                    <span class="badge badge-info">{{.Session.Timeframe}}</span>
-                </div>
-                <div class="info-item">
-                    <strong>创建时间:</strong>
-                    <span>{{.Session.CreatedAt.Format "2006-01-02 15:04:05"}}</span>
-                </div>
-                <div class="info-item">
-                    <strong>已执行:</strong>
-                    {{if .Session.Executed}}
-                    <span class="badge badge-success">✅ 是</span>
-                    {{else}}
-                    <span class="badge badge-warning">⏸ 否</span>
-                    {{end}}
-                </div>
-                {{if .Session.Decision}}
-                <div class="info-item">
-                    <strong>交易决策:</strong>
-                    {{$action := extractActionWithSymbol .Session.Decision .Session.Symbol}}
-                    {{if eq $action "BUY"}}
-                        <span class="action-badge action-buy">📈 BUY</span>
-                    {{else if eq $action "SELL"}}
-                        <span class="action-badge action-sell">📉 SELL</span>
-                    {{else if eq $action "CLOSE_LONG"}}
-                        <span class="action-badge action-close">🔒 平多</span>
-                    {{else if eq $action "CLOSE_SHORT"}}
-                        <span class="action-badge action-close">🔒 平空</span>
-                    {{else if eq $action "HOLD"}}
-                        <span class="action-badge action-hold">💤 HOLD</span>
-                    {{else if eq $action "NO_DECISION"}}
-                        <span class="action-badge action-no-decision" style="background: #6c757d; color: white;">➖ N/A</span>
-                    {{else}}
-                        <span class="action-badge action-unknown">❓ {{$action}}</span>
-                    {{end}}
-                </div>
-                {{end}}
-            </div>
-        </div>
+<div class="container">
 
-        <div class="tabs-container">
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab(event, 'full_decision')">
-                    🤖 LLM 原始输出
-                </button>
-                <button class="tab" onclick="switchTab(event, 'decision')">
-                    🎯 本交易对决策
-                </button>
-                <button class="tab" onclick="switchTab(event, 'market')">
-                    📊 市场分析
-                </button>
-                <button class="tab" onclick="switchTab(event, 'crypto')">
-                    💰 加密货币分析
-                </button>
-                <button class="tab" onclick="switchTab(event, 'sentiment')">
-                    😊 市场情绪
-                </button>
-                <button class="tab" onclick="switchTab(event, 'position')">
-                    💼 持仓信息
-                </button>
-            </div>
-
-            <div id="full_decision" class="tab-content active">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染 LLM 原始输出...</p>
-                </div>
-            </div>
-
-            <div id="decision" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染本交易对决策...</p>
-                </div>
-            </div>
-
-            <div id="market" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染市场分析...</p>
-                </div>
-            </div>
-
-            <div id="crypto" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染加密货币分析...</p>
-                </div>
-            </div>
-
-            <div id="sentiment" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染情绪分析...</p>
-                </div>
-            </div>
-
-            <div id="position" class="tab-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>正在渲染持仓信息...</p>
-                </div>
-            </div>
+    <div class="masthead">
+        <span class="wordmark">会话 #{{.Session.ID}}</span>
+        <div class="masthead-actions" style="margin-left:auto">
+            <a href="/trade-history" class="btn btn-quiet">决策记录</a>
+            <a href="/" class="btn btn-quiet">返回面板</a>
         </div>
     </div>
 
-    <script>
+    <div class="detail-meta">
+        <div class="meta-item">
+            <div class="field-label">交易对</div>
+            <div class="field-value">{{displaySymbol .Session.Symbol}}</div>
+        </div>
+        <div class="meta-item">
+            <div class="field-label">K 线周期</div>
+            <div class="field-value">{{.Session.Timeframe}}</div>
+        </div>
+        <div class="meta-item">
+            <div class="field-label">时间</div>
+            <div class="field-value">{{.Session.CreatedAt.Format "2006-01-02 15:04:05"}}</div>
+        </div>
+        {{if .Session.Decision}}
+        <div class="meta-item">
+            <div class="field-label">决策</div>
+            <div class="field-value">
+                {{$action := extractActionWithSymbol .Session.Decision .Session.Symbol}}
+                {{if eq $action "BUY"}}<span class="verdict verdict-buy">买入</span>
+                {{else if eq $action "SELL"}}<span class="verdict verdict-sell">卖出</span>
+                {{else if eq $action "CLOSE_LONG"}}<span class="verdict verdict-close">平多</span>
+                {{else if eq $action "CLOSE_SHORT"}}<span class="verdict verdict-close">平空</span>
+                {{else if eq $action "HOLD"}}<span class="verdict verdict-hold">观望</span>
+                {{else}}<span class="verdict verdict-hold">无决策</span>{{end}}
+            </div>
+        </div>
+        {{end}}
+        <div class="meta-item">
+            <div class="field-label">是否执行</div>
+            <div class="field-value">{{if .Session.Executed}}已执行{{else}}未执行{{end}}</div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab(event, 'full_decision')">LLM 原始输出</button>
+        <button class="tab" onclick="switchTab(event, 'decision')">本交易对决策</button>
+        <button class="tab" onclick="switchTab(event, 'market')">市场分析</button>
+        <button class="tab" onclick="switchTab(event, 'crypto')">币种分析</button>
+        <button class="tab" onclick="switchTab(event, 'sentiment')">市场情绪</button>
+        <button class="tab" onclick="switchTab(event, 'position')">持仓信息</button>
+    </div>
+
+    <div id="full_decision" class="panel active"><div class="loading">正在渲染…</div></div>
+    <div id="decision" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="market" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="crypto" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="sentiment" class="panel"><div class="loading">正在渲染…</div></div>
+    <div id="position" class="panel"><div class="loading">正在渲染…</div></div>
+</div>
+
+<script>
         // Session data from Go template
         const sessionData = {
             fullDecision: {{.Session.FullDecision}},
@@ -496,13 +92,13 @@
         // Render markdown content
         function renderMarkdown(content) {
             if (!content || content.trim() === '') {
-                return '<div class="empty-content">📭 暂无内容</div>';
+                return '<div class="empty"><b>这一步没有产出内容</b>该智能体在本次会话中没有返回报告。</div>';
             }
             try {
-                return '<div class="report-content">' + marked.parse(content) + '</div>';
+                return '<div class="report">' + marked.parse(content) + '</div>';
             } catch (e) {
                 console.error('Markdown rendering error:', e);
-                return '<div class="empty-content">⚠️ 渲染失败: ' + e.message + '</div>';
+                return '<div class="empty"><b>无法渲染这份报告</b>' + e.message + '</div>';
             }
         }
 
@@ -519,7 +115,7 @@
         // Tab switching
         function switchTab(event, tabId) {
             // Hide all tab contents
-            const contents = document.getElementsByClassName('tab-content');
+            const contents = document.getElementsByClassName('panel');
             for (let content of contents) {
                 content.classList.remove('active');
             }

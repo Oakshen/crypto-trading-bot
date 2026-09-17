@@ -94,3 +94,8 @@ vet:
 help: Makefile
 	@echo " 选择一个命令:"
 	@sed -n 's/^##//p' $< | column -t -s ':' |  sed -e 's/^/ /'
+
+## run-ui: 启动 UI 预览（示例数据，无需 API Key，不会下单）
+run-ui:
+	@echo "🎨 启动 UI 预览（示例数据，不连接币安/LLM）..."
+	@go run $(CMD_DIR)/uipreview/main.go
