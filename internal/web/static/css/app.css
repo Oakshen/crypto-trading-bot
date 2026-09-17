@@ -14,43 +14,50 @@
    1. Tokens / 设计令牌
    ------------------------------------------------------------------------- */
 :root {
-    /* Paper — pale amber, deliberately chromatic so it reads yellow, not cream
-       纸面——浅琥珀色，刻意保留彩度，使其读起来是黄色而非米白 */
-    --paper:      #FAF3D2;
-    --paper-2:    #F5EBBF;
-    --paper-3:    #EFE2A8;
-    --paper-edge: #FDF9E6;
+    /* Surfaces — the amber is the PAGE; content sits on near-white cards that
+       lift off it. Making page, panels and tables all amber produced a wall of
+       yellow with only 1.07 separation between surfaces, so nothing read as
+       distinct and long text was tiring.
+       表面——琥珀色只用于页面背景；内容位于浮起的近白色卡片上。
+       此前页面、面板、表格全为琥珀色，各表面之间的对比度仅 1.07，
+       彼此无法区分，长文本因此读起来很吃力。 */
+    --paper:      #FBF5E0;  /* page / 页面 */
+    --paper-2:    #FFFDF5;  /* content cards, lifted / 内容卡片（浮起） */
+    --paper-3:    #F5EDD2;  /* wells, table headers / 凹槽、表头 */
+    --paper-edge: #FFFFFF;  /* inputs / 输入框 */
 
-    /* Rules — a ledger is ruled, so hairlines carry structure here
-       横线——账簿本就有横线，因此细线在此承担结构作用 */
-    --rule:      #DCCB8E;
-    --rule-soft: #E8DCAE;
-    --rule-firm: #C9B466;
+    /* Rules / 分隔线 */
+    --rule:      #D1C187;
+    --rule-soft: #E3D6A6;
+    --rule-firm: #C0AC6A;
 
-    /* Ink — warm olive-black, not a tinted grey
-       墨色——暖调橄榄黑，而非染色的灰黑 */
-    --ink:   #2B2405;
-    --ink-2: #5C5324;
-    --ink-3: #8A7F4A;
-    --ink-4: #A99E6B;
+    /* Ink — every step is solved against the worst surface it appears on, not
+       chosen by eye. The previous --ink-3 measured 3.09:1 on table headers and
+       carried both labels and the decision tape's reason text, i.e. the page's
+       primary content was its least legible type.
+       墨色——每一档都是针对其出现的最差表面计算得出，而非凭肉眼选取。
+       此前的 --ink-3 在表头上实测仅 3.09:1，却同时承担标签与决策理由文本，
+       即页面的主要内容反而是最难阅读的文字。 */
+    --ink:   #2B2405;  /* 13.3:1 */
+    --ink-2: #463F1B;  /*  9.0:1 */
+    --ink-3: #564F2E;  /*  7.0:1 — WCAG AAA for body text / 正文达到 AAA */
+    --ink-4: #736C49;  /*  4.5:1 — non-essential only / 仅用于非必要信息 */
 
-    /* Data — gain/loss must survive red-green colour blindness, so the pair is
-       blue/red rather than the conventional green/red: no green/red pair clears
-       deuteranopia (best measured ΔE 6.1, below the usable floor), and on a
-       trading dashboard mistaking profit for loss is the worst failure there is.
-       数据色——盈亏配色必须能被红绿色盲区分，因此采用蓝/红而非惯常的绿/红：
-       任何绿/红组合都无法通过红绿色盲检验（实测最佳 ΔE 仅 6.1，低于可用下限），
-       而在交易面板上，把盈利误读为亏损是最严重的失败。
-       The sign (+/−) is always rendered, so colour is never the only channel.
-       正负号始终显示，因此颜色永远不是唯一的信息通道。 */
-    --gain:      #1D5C8F;
-    --gain-wash: rgba(29, 92, 143, 0.10);
+    /* Data — conventional green/red, which is safe here only because figures
+       themselves carry no colour: every number is ink and states its own sign,
+       so green/red never has to be distinguished to read a value. Colour only
+       reinforces markers that already carry a word (多头/空头, 买入/卖出).
+       数据色——采用惯常的绿/红。之所以安全，是因为数值本身不着色：
+       每个数字都是墨色并自带正负号，读取数值时无需分辨绿与红。
+       颜色仅用于强化那些本身已有文字的标记（多头/空头、买入/卖出）。 */
+    --gain:      #1B6B3A;
+    --gain-wash: rgba(27, 107, 58, 0.11);
     --loss:      #A81E12;
     --loss-wash: rgba(168, 30, 18, 0.10);
 
     /* Hold is the absence of action: muted, never coloured
        观望代表不行动：一律弱化，不着色 */
-    --hold: #8A7F4A;
+    --hold: #6D643A;
 
     --radius:   10px;
     --radius-s: 6px;
@@ -91,12 +98,12 @@ button { cursor: pointer; border: none; background: none; }
 h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.012em; line-height: 1.25; }
 
 :focus-visible {
-    outline: 2px solid var(--gain);
+    outline: 2px solid var(--ink);
     outline-offset: 2px;
     border-radius: 3px;
 }
 
-::selection { background: rgba(29, 92, 143, 0.18); }
+::selection { background: rgba(27, 107, 58, 0.18); }
 
 * { scrollbar-width: thin; scrollbar-color: var(--rule-firm) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -284,8 +291,13 @@ table, .num-col, .tape-time, .meter-value { font-variant-numeric: tabular-nums; 
 
 .equity-delta .since { font-size: 13px; font-weight: 400; color: var(--ink-3); }
 
-.up   { color: var(--gain); }
-.down { color: var(--loss); }
+/* Figures stay ink and state their own sign. Colouring every number made the
+   page noisy and put weight on hue to read a value; the sign does that job
+   without it.
+   数值保持墨色并自带正负号。给每个数字着色会让页面显得嘈杂，
+   并迫使读者依赖色相来判断数值；正负号本身即可完成这项工作。 */
+.up,
+.down { color: var(--ink); }
 .flat { color: var(--ink-3); }
 
 .equity-chart { position: relative; min-height: 190px; }
@@ -324,6 +336,7 @@ table, .num-col, .tape-time, .meter-value { font-variant-numeric: tabular-nums; 
     background: var(--paper-2);
     border: 1px solid var(--rule);
     border-radius: var(--radius);
+    box-shadow: 0 1px 0 rgba(43, 36, 5, 0.04);
 }
 
 .position-id { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
@@ -433,9 +446,11 @@ table, .num-col, .tape-time, .meter-value { font-variant-numeric: tabular-nums; 
 .verdict-close { color: var(--ink-2); }
 .verdict-hold  { color: var(--hold); font-weight: 500; }
 
+/* The rationale is what the row is for, so it gets body ink, not label ink.
+   理由是该行存在的意义，因此使用正文墨色而非标签墨色。 */
 .tape-reason {
     font-size: 13.5px;
-    color: var(--ink-3);
+    color: var(--ink-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -554,8 +569,14 @@ tbody td {
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: var(--paper-3); }
 
-.link { font-weight: 600; color: var(--gain); }
-.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.link {
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: underline;
+    text-decoration-color: var(--rule-firm);
+    text-underline-offset: 3px;
+}
+.link:hover { color: var(--ink); text-decoration-color: currentColor; }
 
 /* -------------------------------------------------------------------------
    12. Pagination / 分页
@@ -645,7 +666,7 @@ tbody tr:hover td { background: var(--paper-3); }
 .report ul, .report ol { margin: 0 0 13px 20px; }
 .report li { margin-bottom: 5px; }
 .report strong { color: var(--ink); font-weight: 600; }
-.report a { color: var(--gain); text-decoration: underline; text-underline-offset: 3px; }
+.report a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 
 .report code {
     padding: 1px 5px;
@@ -701,7 +722,7 @@ tbody tr:hover td { background: var(--paper-3); }
 .modal-card {
     width: 100%;
     max-width: 460px;
-    background: var(--paper);
+    background: var(--paper-2);
     border: 1px solid var(--rule-firm);
     border-radius: var(--radius);
     box-shadow: 0 24px 60px -20px rgba(43, 36, 5, 0.45);
@@ -721,7 +742,7 @@ tbody tr:hover td { background: var(--paper-3); }
     justify-content: flex-end;
     gap: 8px;
     padding: 14px 20px;
-    background: var(--paper-2);
+    background: var(--paper-3);
     border-top: 1px solid var(--rule);
 }
 
@@ -762,8 +783,8 @@ tbody tr:hover td { background: var(--paper-3); }
 
 .field input:focus, .field select:focus, .select:focus {
     outline: none;
-    border-color: var(--gain);
-    box-shadow: 0 0 0 3px var(--gain-wash);
+    border-color: var(--ink-2);
+    box-shadow: 0 0 0 3px rgba(70, 63, 27, 0.12);
 }
 
 .field-hint { margin-top: 8px; font-size: 12.5px; color: var(--ink-3); }
