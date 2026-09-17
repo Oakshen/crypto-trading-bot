@@ -64,7 +64,18 @@ func (s *Server) setupRoutes() {
 
 	// Static assets (shared stylesheet, must stay public so the login page can load it)
 	// 静态资源（共用样式表，必须保持公开，否则登录页无法加载）
-	s.hertz.Static("/static", "internal/web/static")
+	//
+	// Hertz does not strip the URL prefix the way Gin's Static does, so without
+	// PathRewrite it looks for "<root>/static/css/app.css" and 404s on every
+	// asset. NewPathSlashesStripper(1) drops the leading "/static" segment.
+	// Hertz 不像 Gin 的 Static 那样自动去掉 URL 前缀，
+	// 因此不设置 PathRewrite 时它会去找 "<root>/static/css/app.css"，
+	// 导致所有静态资源 404。NewPathSlashesStripper(1) 用于去掉开头的 "/static" 段。
+	s.hertz.StaticFS("/static", &app.FS{
+		Root:                 "internal/web/static",
+		PathRewrite:          app.NewPathSlashesStripper(1),
+		CompressedFileSuffix: ".gz",
+	})
 
 	// Protected routes (authentication required)
 	// 受保护路由（需要认证）

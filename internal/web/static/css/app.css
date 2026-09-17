@@ -78,6 +78,13 @@
 *::before,
 *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* No overflow-x:hidden here on purpose: it makes the root a scroll container
+   and silently breaks position:sticky on the table headers. The overflow this
+   was guarding against is fixed properly at its source (grid minmax(0,1fr) and
+   the positions table scrolling inside its own card).
+   此处刻意不使用 overflow-x:hidden：它会让根元素成为滚动容器，
+   并悄悄破坏表头的 position:sticky。原本要兜底的横向溢出问题
+   已在根源处修复（网格使用 minmax(0,1fr)，持仓表在自身卡片内滚动）。 */
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -445,7 +452,14 @@ h1 {
    ------------------------------------------------------------------------- */
 .main-content {
     display: grid;
-    grid-template-columns: minmax(300px, 380px) 1fr;
+    /* minmax(0, ...) on both tracks: a bare "1fr" means minmax(auto, 1fr), whose
+       auto floor is the content's min-content width. The monospace batch
+       timestamps floored the left column at 490px and pushed the whole page
+       into horizontal overflow on phones.
+       两条轨道都使用 minmax(0, ...)：单写 "1fr" 等价于 minmax(auto, 1fr)，
+       其 auto 下限为内容的 min-content 宽度。等宽字体的批次时间把左栏撑到 490px，
+       导致整个页面在手机上横向溢出。 */
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
     gap: 18px;
     align-items: start;
 }
@@ -456,6 +470,7 @@ h1 {
     padding: 18px;
     height: calc(100vh - 210px);
     min-height: 520px;
+    min-width: 0; /* 允许在网格中收缩 / allow shrinking inside the grid */
 }
 
 .right-panel {
@@ -467,6 +482,7 @@ h1 {
     box-shadow: none;
     height: calc(100vh - 210px);
     min-height: 520px;
+    min-width: 0; /* 允许在网格中收缩 / allow shrinking inside the grid */
 }
 
 .panel-title {
@@ -511,6 +527,7 @@ h1 {
     background: rgba(255, 255, 255, 0.025);
     border-bottom: 1px solid var(--border);
     letter-spacing: 0.02em;
+    overflow-wrap: anywhere; /* 长时间戳换行而非撑宽容器 / wrap long timestamps instead of widening */
 }
 .batch-header strong { color: var(--text-soft); font-weight: 600; }
 
@@ -519,6 +536,7 @@ h1 {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    flex-wrap: wrap;
     padding: 10px 14px;
     cursor: pointer;
     border-bottom: 1px solid var(--border);
@@ -535,6 +553,7 @@ h1 {
     font-weight: 600;
     font-size: 0.82rem;
     color: var(--text);
+    min-width: 0;
 }
 
 .trade-time { color: var(--text-faint); font-size: 0.74rem; font-family: var(--font-mono); }
@@ -542,7 +561,21 @@ h1 {
 /* -------------------------------------------------------------------------
    9. Tables / 表格
    ------------------------------------------------------------------------- */
-.positions-container { padding: 18px; flex-shrink: 0; }
+.positions-container {
+    padding: 18px;
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+/* The positions table has seven columns and cannot fit a phone width, so it
+   scrolls inside its own card rather than widening the page.
+   持仓表有七列，无法在手机宽度下完整显示，
+   因此让它在自己的卡片内横向滚动，而不是撑宽整个页面。 */
+.positions-container .positions-table-scroll {
+    overflow-x: auto;
+    margin: 0 -18px;
+    padding: 0 18px;
+}
 
 .positions-table,
 .table-container table {
@@ -552,11 +585,17 @@ h1 {
     font-size: 0.82rem;
 }
 
+/* Deliberately not position:sticky. Both tables live inside a card that sets
+   overflow:hidden for its rounded corners, which confines a sticky header to
+   that card and makes it scroll away regardless. Neither table scrolls
+   vertically either (batch tables are a few rows), so a sticky header has
+   nothing to stick to.
+   这里刻意不使用 position:sticky。两张表都位于为实现圆角而设置
+   overflow:hidden 的卡片内，这会把 sticky 表头限制在该卡片中，
+   使其无论如何都会随页面滚走。并且两张表都不会垂直滚动
+   （批次表只有几行），sticky 表头没有可吸附的对象。 */
 .positions-table thead th,
 .table-container thead th {
-    position: sticky;
-    top: 0;
-    z-index: 2;
     padding: 9px 13px;
     text-align: left;
     font-size: 0.7rem;
@@ -1147,15 +1186,20 @@ body.login-page {
    19. Responsive / 响应式
    ------------------------------------------------------------------------- */
 @media (max-width: 1280px) {
-    .main-content { grid-template-columns: minmax(280px, 340px) 1fr; }
+    .main-content { grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); }
 }
 
 @media (max-width: 1024px) {
-    .main-content { grid-template-columns: 1fr; }
+    .main-content { grid-template-columns: minmax(0, 1fr); }
     .left-panel,
     .right-panel { height: auto; min-height: 0; }
     .left-panel { max-height: 560px; }
     .chart-wrapper { min-height: 280px; }
+}
+
+@media (max-width: 900px) {
+    .positions-container { overflow-x: auto; }
+    .positions-table { min-width: 620px; }
 }
 
 @media (max-width: 768px) {

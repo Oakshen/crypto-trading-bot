@@ -570,14 +570,27 @@ func (s *Storage) SaveBalanceHistory(balance *BalanceHistory) error {
 // GetBalanceHistory retrieves balance history for the last N hours
 // GetBalanceHistory 获取最近 N 小时的余额历史
 func (s *Storage) GetBalanceHistory(hours int) ([]*BalanceHistory, error) {
+	// SQLite's datetime('now') is UTC, but timestamps are written as local
+	// time.Time values, so comparing the two shifted the window by the local
+	// UTC offset: on a UTC-7 host the 1h and 3h ranges returned nothing and the
+	// dashboard chart came up blank, while 1d silently returned only 17 hours.
+	// Computing the cutoff in Go and binding it as a parameter makes the
+	// comparison use the exact same representation the writer produced.
+	// SQLite 的 datetime('now') 是 UTC 时间，而 timestamp 是以本地时间的
+	// time.Time 写入的，二者比较会产生本地时区偏移量大小的窗口错位：
+	// 在 UTC-7 的主机上，1h 与 3h 范围查不到任何数据，仪表盘图表一片空白，
+	// 而 1d 实际只返回了 17 小时的数据。
+	// 在 Go 侧计算截止时间并作为参数绑定，可确保比较双方使用完全相同的表示形式。
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+
 	query := `
 	SELECT id, timestamp, total_balance, available_balance, unrealized_pnl, positions
 	FROM balance_history
-	WHERE timestamp >= datetime('now', '-' || ? || ' hours')
+	WHERE timestamp >= ?
 	ORDER BY timestamp ASC
 	`
 
-	rows, err := s.db.Query(query, hours)
+	rows, err := s.db.Query(query, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query balance history: %w", err)
 	}
