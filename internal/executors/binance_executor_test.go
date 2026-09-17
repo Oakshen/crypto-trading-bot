@@ -2,20 +2,22 @@ package executors
 
 import (
 	"context"
-	"fmt"
+	"testing"
+
 	"github.com/oak/crypto-trading-bot/internal/config"
 	"github.com/oak/crypto-trading-bot/internal/logger"
-	"os"
-	"testing"
 )
 
 // TestBinanceExecutor_SetupExchange 测试交易所设置（需要有效的 API key）
 // TestBinanceExecutor_SetupExchange tests exchange setup (requires valid API key)
 func TestBinanceExecutor_SetupExchange(t *testing.T) {
+	// Skip instead of os.Exit: os.Exit aborts the whole test binary, so a
+	// missing local test/.env used to fail every test in this package.
+	// 用 Skip 取代 os.Exit：os.Exit 会终止整个测试进程，
+	// 因此本地缺少 test/.env 时会导致本包所有测试一并失败。
 	cfg, err := config.LoadConfig("../../test/.env")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
-		os.Exit(1)
+		t.Skipf("跳过：需要本地 test/.env 配置 (%v)", err)
 	}
 
 	log := logger.NewColorLogger(true)
@@ -48,9 +50,15 @@ func TestBinanceConnecting(t *testing.T) {
 
 	// 测试 Ping（公开 API，不需要 API key）
 	// Test Ping (public API, no API key required)
+	//
+	// The proxy above is a LAN address, so this can only run on a machine that
+	// has it. Skip rather than fail when it is unreachable, otherwise the whole
+	// package reports red on any other machine.
+	// 上面的代理是局域网地址，只有具备该环境的机器才能运行本测试。
+	// 不可达时选择跳过而不是失败，否则在其他机器上整个包都会报红。
 	err := executor.client.NewPingService().Do(context.Background())
 	if err != nil {
-		t.Fatalf("failed to connect to binance: %v", err)
+		t.Skipf("跳过：无法通过代理 %s 访问币安 (%v)", cfg.BinanceProxy, err)
 	}
 	t.Logf("✅ Successfully connected to Binance via proxy!")
 }

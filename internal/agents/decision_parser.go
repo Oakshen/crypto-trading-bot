@@ -259,8 +259,13 @@ func extractStopLoss(text string) float64 {
 		`\*{0,2}初始止损\*{0,2}[：:\s]*\$?\s*([0-9,.]+)`,                   // **初始止损**: $154.50
 		`\*{0,2}stop[-\s]?loss\s*price\*{0,2}[：:\s]*\$?\s*([0-9,.]+)`, // stop-loss price: $100
 		`\*{0,2}stop[-\s]?loss\*{0,2}[：:\s]*\$?\s*([0-9,.]+)`,         // stop-loss: $100
-		// ⚠️  Do NOT add generic "止损" pattern here as it will match "止损调整理由", "止损理由" etc.
-		// ⚠️  不要在此添加宽泛的 "止损" 模式，因为它会匹配 "止损调整理由"、"止损理由" 等
+		// Bare "止损" is only matched when a colon follows it immediately, which
+		// is what keeps "止损调整理由：..." and "止损理由：..." from matching:
+		// there the colon comes after the extra words, not after 止损.
+		// 只有当冒号紧跟在 "止损" 之后时才匹配裸写的 "止损"，
+		// 这正是 "止损调整理由：..."、"止损理由：..." 不会被匹配的原因：
+		// 那些情况下冒号出现在附加词之后，而不是紧跟 "止损"。
+		`\*{0,2}止损\*{0,2}[：:]\s*\$?\s*([0-9,.]+)`, // 止损: $1,234.56
 	}
 
 	for _, pattern := range patterns {

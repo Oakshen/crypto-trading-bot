@@ -46,20 +46,15 @@ func NewPortfolioManager(cfg *config.Config, executor *executors.BinanceExecutor
 // UpdateBalance updates the account balance information
 // UpdateBalance 更新账户余额信息
 func (pm *PortfolioManager) UpdateBalance(ctx context.Context) error {
-	account, err := pm.executor.GetAccountInfo(ctx)
+	balance, err := pm.executor.GetAccountBalance(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get account balance: %w", err)
 	}
 
-	for _, asset := range account.Assets {
-		if asset.Asset == "USDT" {
-			pm.totalBalance, _ = parseFloat(asset.WalletBalance)
-			pm.availableBalance, _ = parseFloat(asset.AvailableBalance)
-			// Balance log removed to reduce verbosity (logged when saving balance snapshot)
-			// 移除余额日志以减少冗余（在保存余额快照时会打印）
-			break
-		}
-	}
+	pm.totalBalance = balance.WalletBalance
+	pm.availableBalance = balance.AvailableBalance
+	// Balance log removed to reduce verbosity (logged when saving balance snapshot)
+	// 移除余额日志以减少冗余（在保存余额快照时会打印）
 
 	return nil
 }

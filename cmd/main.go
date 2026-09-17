@@ -83,6 +83,17 @@ func main() {
 
 	ctx := context.Background()
 
+	// Load exchange trading rules and sync the signing clock
+	// 加载交易规则并同步签名用的时钟
+	// Every order is formatted against exchangeInfo, so this must succeed before
+	// the first trade rather than lazily mid-execution.
+	// 每一笔订单都按 exchangeInfo 格式化，因此必须在第一笔交易之前完成，
+	// 而不是在执行过程中延迟加载。
+	log.Subheader("初始化币安交易规则", '─', 80)
+	if err := executor.Init(ctx); err != nil {
+		log.Warning(fmt.Sprintf("⚠️  初始化交易规则失败: %v（下单时会重试）", err))
+	}
+
 	// Initialize and verify LLM service
 	// 初始化并验证 LLM 服务
 	log.Subheader("验证 LLM 服务", '─', 80)
@@ -414,6 +425,25 @@ func main() {
 
 			if result.Success {
 				executionResults[symbol] = fmt.Sprintf("✅ 成功执行 %s", result.Action)
+
+				// Handle closing positions: cancel the stop-loss order and update the database
+				// 处理平仓：取消止损单并更新数据库
+				// Without this the Algo stop-loss order stays live on Binance after the
+				// position is gone, and can fire against a later position.
+				// 如果不做这一步，持仓已平但 Algo 止损单仍留在币安上，
+				// 之后可能对一笔新的持仓意外触发。
+				if symbolDecision.Action == executors.ActionCloseLong || symbolDecision.Action == executors.ActionCloseShort {
+					closePrice := result.Price
+					realizedPnL := 0.0
+					if currentPosition != nil {
+						realizedPnL = currentPosition.UnrealizedPnL
+					}
+
+					closeReason := fmt.Sprintf("LLM决策平仓: %s", symbolDecision.Reason)
+					if err := stopLossManager.ClosePosition(ctx, symbol, closePrice, closeReason, realizedPnL); err != nil {
+						log.Warning(fmt.Sprintf("⚠️  关闭 %s 持仓失败: %v", symbol, err))
+					}
+				}
 
 				// Register position for stop-loss management (only for opening positions)
 				// 注册持仓到止损管理器（仅开仓时）

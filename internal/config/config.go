@@ -333,9 +333,13 @@ func getProjectDir() string {
 
 // calculateLookbackDays returns optimal lookback days based on timeframe
 func calculateLookbackDays(timeframe string) int {
+	// Binance returns at most 1000 candles per klines call, so a window wider
+	// than that is trimmed to the most recent 1000 in GetOHLCV.
+	// 币安单次 K 线请求最多返回 1000 根，超出的窗口会在 GetOHLCV 中
+	// 被收敛为最近的 1000 根。
 	switch timeframe {
 	case "3m":
-		return 3 // ~1440 candles (3 days * 480 candles/day)
+		return 3 // 3 days = 1440 candles, trimmed to the latest 1000 (~50h) / 3天=1440根，截取最近1000根（约50小时）
 	case "15m":
 		return 5 // ~480 candles
 	case "1h":

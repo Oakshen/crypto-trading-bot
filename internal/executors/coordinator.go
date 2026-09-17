@@ -147,18 +147,12 @@ func (tc *TradeCoordinator) ExecuteDecisionWithParams(ctx context.Context, symbo
 func (tc *TradeCoordinator) preExecutionChecks(ctx context.Context, symbol string, action TradeAction) error {
 	// Check 1: Verify balance
 	// 检查 1: 验证余额
-	account, err := tc.executor.client.NewGetAccountService().Do(ctx)
+	balance, err := tc.executor.GetAccountBalance(ctx)
 	if err != nil {
 		return fmt.Errorf("无法获取账户信息: %w", err)
 	}
 
-	var availableBalance float64
-	for _, asset := range account.Assets {
-		if asset.Asset == "USDT" {
-			fmt.Sscanf(asset.AvailableBalance, "%f", &availableBalance)
-			break
-		}
-	}
+	availableBalance := balance.AvailableBalance
 
 	if availableBalance < 10.0 { // Minimum balance check
 		return fmt.Errorf("可用余额不足: %.2f USDT < 10 USDT", availableBalance)
@@ -281,17 +275,22 @@ func (tc *TradeCoordinator) calculatePositionSize(ctx context.Context, symbol st
 
 	// Adjust quantity to meet symbol's precision and minimum quantity requirements
 	// 调整数量以符合交易对的精度和最小数量要求
-	adjustedSize, err := AdjustQuantityPrecision(symbol, rawSize)
+	adjustedSize, err := tc.executor.AdjustQuantityPrecision(ctx, symbol, rawSize)
 	if err != nil {
 		return 0, fmt.Errorf("精度调整失败: %w", err)
 	}
 
 	tc.logger.Info(fmt.Sprintf("原始数量: %.4f → 调整后: %.4f (符合 %s 精度要求)", rawSize, adjustedSize, symbol))
 
-	// Check minimum notional value (Binance requires ≥ $100 USDT)
-	// 检查最小订单价值（币安要求 ≥ $100 USDT）
+	// Check minimum notional value against the symbol's own MIN_NOTIONAL filter
+	// 按交易对自身的 MIN_NOTIONAL 规则检查最小订单价值
+	// It is not a flat $100 across all contracts, so read it from exchangeInfo.
+	// 该阈值并非所有合约都是 100 USDT，因此从 exchangeInfo 读取。
 	notionalValue := adjustedSize * currentPrice
 	minNotional := 100.0
+	if filters, ferr := tc.executor.SymbolFilters(ctx, symbol); ferr == nil && filters.MinNotional > 0 {
+		minNotional = filters.MinNotional
+	}
 
 	if notionalValue < minNotional {
 		return 0, fmt.Errorf(`

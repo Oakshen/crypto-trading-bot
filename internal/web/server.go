@@ -62,6 +62,10 @@ func (s *Server) setupRoutes() {
 	s.hertz.POST("/login", s.handleLogin)
 	s.hertz.GET("/health", s.handleHealth)
 
+	// Static assets (shared stylesheet, must stay public so the login page can load it)
+	// 静态资源（共用样式表，必须保持公开，否则登录页无法加载）
+	s.hertz.Static("/static", "internal/web/static")
+
 	// Protected routes (authentication required)
 	// 受保护路由（需要认证）
 	protected := s.hertz.Group("/", s.AuthMiddleware())

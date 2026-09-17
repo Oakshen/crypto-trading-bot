@@ -14,7 +14,6 @@ func TestCalculateInitialStop(t *testing.T) {
 		entryPrice float64
 		atr        float64
 		side       string
-		expected   float64
 	}{
 		{
 			name:       "Long position initial stop",
@@ -22,7 +21,6 @@ func TestCalculateInitialStop(t *testing.T) {
 			entryPrice: 50000,
 			atr:        500,
 			side:       "long",
-			expected:   50000 - 2.5*500, // 48750
 		},
 		{
 			name:       "Short position initial stop",
@@ -30,7 +28,6 @@ func TestCalculateInitialStop(t *testing.T) {
 			entryPrice: 50000,
 			atr:        500,
 			side:       "short",
-			expected:   50000 + 2.5*500, // 51250
 		},
 		{
 			name:       "ETH long position initial stop",
@@ -38,7 +35,6 @@ func TestCalculateInitialStop(t *testing.T) {
 			entryPrice: 3000,
 			atr:        50,
 			side:       "long",
-			expected:   3000 - 2.5*50, // 2875
 		},
 		{
 			name:       "SOL short position with higher volatility",
@@ -46,15 +42,23 @@ func TestCalculateInitialStop(t *testing.T) {
 			entryPrice: 100,
 			atr:        5,
 			side:       "short",
-			expected:   100 + 2.5*5, // 112.5
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			distance := calc.GetConfig(tt.symbol).InitialATRMultiplier * tt.atr
+
+			// A long stops below entry, a short stops above it
+			// 多仓止损在开仓价下方，空仓止损在开仓价上方
+			expected := tt.entryPrice - distance
+			if tt.side == "short" {
+				expected = tt.entryPrice + distance
+			}
+
 			result := calc.CalculateInitialStop(tt.symbol, tt.entryPrice, tt.atr, tt.side)
-			if math.Abs(result-tt.expected) > 0.01 {
-				t.Errorf("CalculateInitialStop() = %.2f, expected %.2f", result, tt.expected)
+			if math.Abs(result-expected) > 0.01 {
+				t.Errorf("CalculateInitialStop() = %.2f, expected %.2f", result, expected)
 			}
 		})
 	}
@@ -63,13 +67,16 @@ func TestCalculateInitialStop(t *testing.T) {
 func TestCalculateTrailingStop(t *testing.T) {
 	calc := NewTrailingStopCalculator(nil)
 
+	// Expectations are derived from each symbol's configured multiplier rather
+	// than hardcoded, so retuning risk parameters cannot silently invalidate them.
+	// 预期值由各交易对配置的倍数推导而来，而非写死，
+	// 这样重新调整风险参数时不会悄悄让断言失效。
 	tests := []struct {
 		name         string
 		symbol       string
 		highestPrice float64
 		atr          float64
 		side         string
-		expected     float64
 	}{
 		{
 			name:         "Long position trailing stop",
@@ -77,7 +84,6 @@ func TestCalculateTrailingStop(t *testing.T) {
 			highestPrice: 52000,
 			atr:          500,
 			side:         "long",
-			expected:     52000 - 3*500, // 50500 (BTCUSDT uses 3× multiplier)
 		},
 		{
 			name:         "Short position trailing stop",
@@ -85,7 +91,6 @@ func TestCalculateTrailingStop(t *testing.T) {
 			highestPrice: 48000, // This is actually lowest price for short
 			atr:          500,
 			side:         "short",
-			expected:     48000 + 3*500, // 49500 (BTCUSDT uses 3× multiplier)
 		},
 		{
 			name:         "ETH long with small ATR",
@@ -93,23 +98,30 @@ func TestCalculateTrailingStop(t *testing.T) {
 			highestPrice: 3200,
 			atr:          40,
 			side:         "long",
-			expected:     3200 - 3*40, // 3080 (ETHUSDT uses 3× multiplier)
 		},
 		{
-			name:         "SOL short with same multiplier",
+			name:         "SOL short",
 			symbol:       "SOLUSDT",
 			highestPrice: 95, // lowest price
 			atr:          5,
 			side:         "short",
-			expected:     95 + 3*5, // 110 (SOLUSDT uses 3× multiplier)
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			distance := calc.GetConfig(tt.symbol).TrailingATRMultiplier * tt.atr
+
+			// A long trails below the high, a short trails above the low
+			// 多仓止损跟在最高价下方，空仓止损跟在最低价上方
+			expected := tt.highestPrice - distance
+			if tt.side == "short" {
+				expected = tt.highestPrice + distance
+			}
+
 			result := calc.CalculateTrailingStop(tt.symbol, tt.highestPrice, tt.atr, tt.side)
-			if math.Abs(result-tt.expected) > 0.01 {
-				t.Errorf("CalculateTrailingStop() = %.2f, expected %.2f", result, tt.expected)
+			if math.Abs(result-expected) > 0.01 {
+				t.Errorf("CalculateTrailingStop() = %.2f, expected %.2f", result, expected)
 			}
 		})
 	}
@@ -175,48 +187,57 @@ func TestIsValidUpdate(t *testing.T) {
 func TestShouldUpdate(t *testing.T) {
 	calc := NewTrailingStopCalculator(nil)
 
+	// The move is expressed as a multiple of the symbol's own threshold, so the
+	// test stays correct whatever the configured threshold is.
+	// 变动幅度以各交易对自身阈值的倍数表示，
+	// 因此无论阈值配置为何，本测试都保持正确。
 	tests := []struct {
-		name        string
-		symbol      string
-		oldStopLoss float64
-		newStopLoss float64
-		expected    bool
+		name          string
+		symbol        string
+		oldStopLoss   float64
+		thresholdMult float64 // 相对阈值的倍数 / Multiple of the configured threshold
+		expected      bool
 	}{
 		{
-			name:        "BTC - change exceeds threshold",
-			symbol:      "BTCUSDT",
-			oldStopLoss: 50000,
-			newStopLoss: 50150, // 0.3% change (exceeds 0.2% threshold)
-			expected:    true,
+			name:          "BTC - change exceeds threshold",
+			symbol:        "BTCUSDT",
+			oldStopLoss:   50000,
+			thresholdMult: 2.0,
+			expected:      true,
 		},
 		{
-			name:        "BTC - change below threshold",
-			symbol:      "BTCUSDT",
-			oldStopLoss: 50000,
-			newStopLoss: 50050, // 0.1% change (below 0.2% threshold)
-			expected:    false,
+			name:          "BTC - change below threshold",
+			symbol:        "BTCUSDT",
+			oldStopLoss:   50000,
+			thresholdMult: 0.5,
+			expected:      false,
 		},
 		{
-			name:        "SOL - change exceeds threshold",
-			symbol:      "SOLUSDT",
-			oldStopLoss: 100,
-			newStopLoss: 100.6, // 0.6% change (exceeds 0.5% threshold for SOL)
-			expected:    true,
+			name:          "SOL - change exceeds threshold",
+			symbol:        "SOLUSDT",
+			oldStopLoss:   100,
+			thresholdMult: 2.0,
+			expected:      true,
 		},
 		{
-			name:        "SOL - change below threshold",
-			symbol:      "SOLUSDT",
-			oldStopLoss: 100,
-			newStopLoss: 100.3, // 0.3% change (below 0.5% threshold for SOL)
-			expected:    false,
+			name:          "SOL - change below threshold",
+			symbol:        "SOLUSDT",
+			oldStopLoss:   100,
+			thresholdMult: 0.5,
+			expected:      false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calc.ShouldUpdate(tt.symbol, tt.oldStopLoss, tt.newStopLoss)
+			threshold := calc.GetConfig(tt.symbol).UpdateThreshold
+			changePercent := threshold * tt.thresholdMult
+			newStopLoss := tt.oldStopLoss * (1 + changePercent/100)
+
+			result := calc.ShouldUpdate(tt.symbol, tt.oldStopLoss, newStopLoss)
 			if result != tt.expected {
-				t.Errorf("ShouldUpdate() = %v, expected %v", result, tt.expected)
+				t.Errorf("ShouldUpdate(%.4f -> %.4f, %.2f%% vs threshold %.2f%%) = %v, expected %v",
+					tt.oldStopLoss, newStopLoss, changePercent, threshold, result, tt.expected)
 			}
 		})
 	}
@@ -293,20 +314,22 @@ func TestGetConfig(t *testing.T) {
 		symbol                     string
 		expectedTrailingMultiplier float64
 	}{
+		// These track the per-symbol multipliers in trailing_stop_calculator.go.
+		// 这些值对应 trailing_stop_calculator.go 中各交易对的倍数配置。
 		{
 			name:                       "BTC config",
 			symbol:                     "BTCUSDT",
-			expectedTrailingMultiplier: 3.0,
+			expectedTrailingMultiplier: 2.8,
 		},
 		{
 			name:                       "ETH config",
 			symbol:                     "ETHUSDT",
-			expectedTrailingMultiplier: 3.0,
+			expectedTrailingMultiplier: 2.7,
 		},
 		{
-			name:                       "SOL config - same multiplier",
+			name:                       "SOL config - wider multiplier",
 			symbol:                     "SOLUSDT",
-			expectedTrailingMultiplier: 3.0,
+			expectedTrailingMultiplier: 2.5,
 		},
 		{
 			name:                       "Unknown symbol - uses default",
@@ -316,7 +339,7 @@ func TestGetConfig(t *testing.T) {
 		{
 			name:                       "Symbol with slash",
 			symbol:                     "BTC/USDT",
-			expectedTrailingMultiplier: 3.0,
+			expectedTrailingMultiplier: 2.8,
 		},
 	}
 
@@ -342,10 +365,17 @@ func TestTrailingStopScenario(t *testing.T) {
 	entryPrice := 50000.0
 	atr := 500.0
 
+	// Derive the expectations from the configured multipliers instead of
+	// hardcoding them, so tuning risk parameters does not silently break this
+	// test the way it did before.
+	// 直接从配置的倍数推导预期值，而不是写死数字，
+	// 这样调整风险参数时就不会像之前那样悄悄使本测试失效。
+	cfg := calc.GetConfig(symbol)
+
 	// 1. Calculate initial stop
 	// 1. 计算初始止损
 	initialStop := calc.CalculateInitialStop(symbol, entryPrice, atr, "long")
-	expectedInitialStop := 48750.0 // 50000 - 2.5*500
+	expectedInitialStop := entryPrice - cfg.InitialATRMultiplier*atr
 	if math.Abs(initialStop-expectedInitialStop) > 0.01 {
 		t.Errorf("Initial stop = %.2f, expected %.2f", initialStop, expectedInitialStop)
 	}
@@ -354,7 +384,7 @@ func TestTrailingStopScenario(t *testing.T) {
 	// 2. 价格上涨到 52000，计算追踪止损
 	highestPrice := 52000.0
 	trailingStop1 := calc.CalculateTrailingStop(symbol, highestPrice, atr, "long")
-	expectedTrailing1 := 50500.0 // 52000 - 3*500 (BTCUSDT uses 3× multiplier)
+	expectedTrailing1 := highestPrice - cfg.TrailingATRMultiplier*atr
 	if math.Abs(trailingStop1-expectedTrailing1) > 0.01 {
 		t.Errorf("Trailing stop 1 = %.2f, expected %.2f", trailingStop1, expectedTrailing1)
 	}
@@ -375,7 +405,7 @@ func TestTrailingStopScenario(t *testing.T) {
 	// 5. 价格上涨到 53000，计算新的追踪止损
 	highestPrice = 53000.0
 	trailingStop2 := calc.CalculateTrailingStop(symbol, highestPrice, atr, "long")
-	expectedTrailing2 := 51500.0 // 53000 - 3*500 (BTCUSDT uses 3× multiplier)
+	expectedTrailing2 := highestPrice - cfg.TrailingATRMultiplier*atr
 	if math.Abs(trailingStop2-expectedTrailing2) > 0.01 {
 		t.Errorf("Trailing stop 2 = %.2f, expected %.2f", trailingStop2, expectedTrailing2)
 	}

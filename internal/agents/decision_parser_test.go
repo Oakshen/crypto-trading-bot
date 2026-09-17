@@ -240,6 +240,20 @@ func TestExtractStopLoss(t *testing.T) {
 			expected:    0,
 			description: "未指定止损",
 		},
+		// Guards for the bare "止损" pattern: these must NOT be read as prices.
+		// 裸写 "止损" 模式的防误匹配用例：以下内容不能被当成价格解析。
+		{
+			name:        "Stop-loss adjustment rationale",
+			text:        "止损调整理由：价格已上涨 3.5%，上移止损",
+			expected:    0,
+			description: "止损调整理由不应被当作价格",
+		},
+		{
+			name:        "Stop-loss rationale",
+			text:        "止损理由：波动率放大",
+			expected:    0,
+			description: "止损理由不应被当作价格",
+		},
 	}
 
 	for _, tt := range tests {

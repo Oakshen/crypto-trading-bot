@@ -2,6 +2,7 @@ package dataflows
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ func TestBinanceFetchKlines(t *testing.T) {
 	t.Logf("获取 %s K 线，时间周期 %s，回看天数 %d", symbol, timeframe, lookbackDays)
 	ohlcvData, err := marketData.GetOHLCV(ctx, symbol, timeframe, lookbackDays)
 	if err != nil {
+		skipIfBinanceUnreachable(t, err)
 		t.Fatalf("获取 %s K 线失败: %v", timeframe, err)
 	}
 
@@ -68,6 +70,7 @@ func TestBinanceFetchMultipleTimeframes(t *testing.T) {
 		t.Run(tc.tf, func(t *testing.T) {
 			ohlcvData, err := marketData.GetOHLCV(ctx, symbol, tc.tf, tc.lookbackDays)
 			if err != nil {
+				skipIfBinanceUnreachable(t, err)
 				t.Fatalf("获取 %s K 线失败: %v", tc.tf, err)
 			}
 
@@ -94,6 +97,7 @@ func TestBinanceFetchWithIndicators(t *testing.T) {
 	// 获取足够的数据来计算 200 日均线
 	ohlcvData, err := marketData.GetOHLCV(ctx, "BTCUSDT", "1d", 250)
 	if err != nil {
+		skipIfBinanceUnreachable(t, err)
 		t.Fatalf("获取 K 线数据失败: %v", err)
 	}
 
@@ -151,6 +155,7 @@ func TestBinanceAPIRateLimit(t *testing.T) {
 	for i := 0; i < requestCount; i++ {
 		_, err := marketData.GetOHLCV(ctx, "BTCUSDT", "1h", 1)
 		if err != nil {
+			skipIfBinanceUnreachable(t, err)
 			t.Logf("请求 %d 失败: %v", i+1, err)
 		} else {
 			successCount++
@@ -180,6 +185,7 @@ func TestBinanceDataQuality(t *testing.T) {
 
 	ohlcvData, err := marketData.GetOHLCV(ctx, "BTCUSDT", "1h", 7)
 	if err != nil {
+		skipIfBinanceUnreachable(t, err)
 		t.Fatalf("获取 K 线数据失败: %v", err)
 	}
 
@@ -233,6 +239,7 @@ func TestBinanceDifferentSymbols(t *testing.T) {
 		t.Run(symbol, func(t *testing.T) {
 			ohlcvData, err := marketData.GetOHLCV(ctx, symbol, "1h", 1)
 			if err != nil {
+				skipIfBinanceUnreachable(t, err)
 				t.Fatalf("获取 %s K 线失败: %v", symbol, err)
 			}
 
@@ -243,5 +250,36 @@ func TestBinanceDifferentSymbols(t *testing.T) {
 			latestPrice := ohlcvData[len(ohlcvData)-1].Close
 			t.Logf("✅ %s 最新价格: $%.2f", symbol, latestPrice)
 		})
+	}
+}
+
+// skipIfBinanceUnreachable skips a live-API test when Binance cannot be reached.
+// skipIfBinanceUnreachable 在无法访问币安时跳过实盘接口测试
+//
+// These tests hit the public REST API directly, so they fail on any machine
+// without egress to Binance — notably from a region Binance geo-blocks, where
+// the API answers with an "Eligibility" notice rather than data. That is an
+// environment condition, not a defect, so it should not be reported as red.
+// 这些测试直接请求公开 REST 接口，因此在任何无法访问币安的机器上都会失败——
+// 尤其是在币安地域限制的地区，接口会返回 "Eligibility" 提示而非数据。
+// 这属于环境限制而非代码缺陷，不应被报告为失败。
+func skipIfBinanceUnreachable(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+	msg := err.Error()
+	for _, marker := range []string{
+		"restricted location",
+		"Eligibility",
+		"no such host",
+		"connection refused",
+		"unexpected EOF",
+		"i/o timeout",
+		"TLS handshake",
+	} {
+		if strings.Contains(msg, marker) {
+			t.Skipf("跳过：当前环境无法访问币安公开接口 (%v)", err)
+		}
 	}
 }

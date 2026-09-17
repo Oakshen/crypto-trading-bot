@@ -21,7 +21,11 @@ func TestLLMJSONOutputWithHistoricalData(t *testing.T) {
 	envPath := filepath.Join("../../.env")
 	cfg, err := config.LoadConfig(envPath)
 	if err != nil {
-		t.Fatalf("加载配置失败: %v", err)
+		// These tests already skip without an API key; skip on a missing .env
+		// too, instead of failing before that check is reached.
+		// 这些测试在没有 API Key 时本就会跳过；.env 缺失时同样跳过，
+		// 而不是在到达该检查之前就失败。
+		t.Skipf("跳过：需要项目根目录的 .env 配置 (%v)", err)
 	}
 
 	// 检查是否设置了 API Key
@@ -140,7 +144,11 @@ func TestLLMJSONOutputWithMultipleHistoricalSessions(t *testing.T) {
 	envPath := filepath.Join("../../.env")
 	cfg, err := config.LoadConfig(envPath)
 	if err != nil {
-		t.Fatalf("加载配置失败: %v", err)
+		// These tests already skip without an API key; skip on a missing .env
+		// too, instead of failing before that check is reached.
+		// 这些测试在没有 API Key 时本就会跳过；.env 缺失时同样跳过，
+		// 而不是在到达该检查之前就失败。
+		t.Skipf("跳过：需要项目根目录的 .env 配置 (%v)", err)
 	}
 
 	// 检查是否设置了 API Key
@@ -242,7 +250,7 @@ func TestEndToEndJSONOutput(t *testing.T) {
 	envPath := filepath.Join("../../.env")
 	cfg, err := config.LoadConfig(envPath)
 	if err != nil {
-		t.Fatalf("❌ 加载配置失败: %v", err)
+		t.Skipf("跳过：需要项目根目录的 .env 配置 (%v)", err)
 	}
 	t.Logf("✅ 配置加载成功")
 	t.Logf("   - 模型: %s", cfg.QuickThinkLLM)

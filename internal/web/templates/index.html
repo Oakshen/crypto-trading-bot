@@ -5,716 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title> Crypto-Trading-Bot - 监控面板</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-            background: #1a1d26;
-            color: #e4e7eb;
-            line-height: 1.6;
-            zoom: 0.9;
-        }
-
-        .container {
-            max-width: 1800px;
-            margin: 0 auto;
-            padding: 15px;
-        }
-
-        /* Header - 顶部状态栏 */
-        header {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            padding: 20px 25px;
-            border-radius: 16px;
-            margin-bottom: 15px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-
-        .header-title {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-
-        h1 {
-            color: #fff;
-            font-size: 1.8em;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            justify-content: center;
-            flex: 1;
-            text-align: center;
-        }
-
-        .header-actions {
-            display: flex;
-            gap: 10px;
-            margin-left: auto;
-        }
-
-        .logout-btn {
-            padding: 8px 18px;
-            background: linear-gradient(135deg, #f44336, #e53935);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: inline-block;
-            justify-self: end;
-            grid-column: 3;
-        }
-
-        .logout-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
-        }
-
-        .status-bar {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .status-label {
-            color: #9ca3af;
-            font-size: 0.95em;
-            margin-right: 5px;
-        }
-
-        /* 交易对药丸按钮 */
-        .symbol-pills {
-            display: flex;
-            gap: 10px;
-        }
-
-        .symbol-pill {
-            padding: 6px 16px;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-            border-radius: 20px;
-            font-size: 0.9em;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: none;
-        }
-
-        .symbol-pill:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-        }
-
-        /* 状态标签 */
-        .badge {
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .badge-blue {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-        }
-
-        .badge-green {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-        }
-
-        .badge-red {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-        }
-
-        .badge-orange {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: white;
-        }
-
-        .badge-gray {
-            background: linear-gradient(135deg, #6b7280, #4b5563);
-            color: white;
-        }
-
-        /* 时间和倒计时 */
-        .time-info {
-            color: #9ca3af;
-            font-size: 0.9em;
-        }
-
-        .countdown {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-weight: 600;
-            margin-left: 8px;
-        }
-
-        /* 主内容区 - 左右两栏布局 */
-        .main-content {
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 20px;
-            margin-bottom: 15px;
-            height: calc(100vh - 180px); /* 顶部header + container padding，底部固定边距 */
-        }
-
-        /* 左侧 - 交易历史 */
-        .left-panel {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            overflow-y: auto;
-            scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: thin;
-            scrollbar-color: #3b4054 #1a1d26;
-            height: 100%; /* 填充父容器高度 */
-            display: flex;
-            flex-direction: column;
-        }
-
-        .panel-title {
-            color: #fff;
-            font-size: 1.2em;
-            font-weight: 600;
-            margin-bottom: 15px;
-            flex-shrink: 0; /* 标题不收缩 */
-        }
-
-        /* 右侧 - 余额图表 + 持仓 */
-        .right-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            height: 100%; /* 填充父容器高度 */
-        }
-
-        /* 余额图表容器 */
-        .balance-chart-container {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .chart-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .chart-title {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .chart-title h2 {
-            color: #fff;
-            font-size: 1.3em;
-            font-weight: 600;
-        }
-
-        .currency-selector {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: #2d3142;
-            padding: 6px 12px;
-            border-radius: 8px;
-            cursor: pointer;
-        }
-
-        .currency-icon {
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7em;
-            font-weight: 700;
-        }
-
-        .balance-display {
-            margin-bottom: 15px;
-        }
-
-        .balance-amount {
-            font-size: 2em;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .time-range-selector {
-            display: flex;
-            gap: 10px;
-        }
-
-        .time-range-btn {
-            padding: 6px 14px;
-            background: #2d3142;
-            color: #9ca3af;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.85em;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-
-        .time-range-btn:hover {
-            background: #3b4054;
-            color: #fff;
-        }
-
-        .time-range-btn.active {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-        }
-
-        .chart-wrapper {
-            position: relative;
-            flex: 1;
-            min-height: 250px;
-            margin-top: 15px;
-        }
-
-        /* 持仓表格容器 */
-        .positions-container {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            flex-shrink: 0; /* 持仓容器不收缩，保持固定高度 */
-            overflow-y: auto; /* 如果持仓过多则滚动 */
-        }
-
-        .positions-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        .positions-table thead {
-            background: #2d3142;
-        }
-
-        .positions-table th {
-            padding: 12px 15px;
-            text-align: left;
-            color: #9ca3af;
-            font-weight: 600;
-            font-size: 0.85em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .positions-table th:first-child {
-            border-radius: 8px 0 0 8px;
-        }
-
-        .positions-table th:last-child {
-            border-radius: 0 8px 8px 0;
-        }
-
-        .positions-table td {
-            padding: 15px;
-            border-bottom: 1px solid #2d3142;
-            color: #e4e7eb;
-            font-size: 0.95em;
-        }
-
-        .positions-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        .positions-table tr:hover {
-            background: rgba(59, 130, 246, 0.05);
-        }
-
-        .profit-positive {
-            color: #10b981 !important;
-            font-weight: 700 !important;
-        }
-
-        .profit-negative {
-            color: #ef4444 !important;
-            font-weight: 700 !important;
-        }
-
-        .side-long {
-            color: #10b981;
-            font-weight: 600;
-        }
-
-        .side-short {
-            color: #ef4444;
-            font-weight: 600;
-        }
-
-        /* 交易历史批次容器 */
-        .trade-batch {
-            border: 1px dashed rgba(59, 130, 246, 0.3);
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 15px;
-        }
-
-        .trade-batch-time {
-            color: #6b7280;
-            font-size: 0.75em;
-            margin-bottom: 8px;
-            padding-left: 5px;
-        }
-
-        /* 交易历史项 */
-        .trade-history-item {
-            background: #2d3142;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .trade-history-item:last-child {
-            margin-bottom: 0;
-        }
-
-        .trade-history-item:hover {
-            background: #3b4054;
-            transform: translateX(5px);
-        }
-
-        .trade-time {
-            color: #9ca3af;
-            font-size: 0.85em;
-            margin-bottom: 8px;
-        }
-
-        .trade-symbol {
-            color: #fff;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .trade-action {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.8em;
-            font-weight: 600;
-        }
-
-        .action-buy {
-            background: rgba(16, 185, 129, 0.2);
-            color: #10b981;
-        }
-
-        .action-sell {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
-        }
-
-        .action-hold {
-            background: rgba(107, 114, 128, 0.2);
-            color: #9ca3af;
-        }
-
-        .view-all-button {
-            display: inline-block;
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.95em;
-            transition: all 0.2s;
-        }
-
-        .view-all-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-        }
-
-        .no-data {
-            text-align: center;
-            padding: 60px 20px;
-            color: #6b7280;
-        }
-
-        /* 滚动条样式 */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #1a1d26;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #3b4054;
-            border-radius: 4px;
-            transition: background 0.2s;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #4b5563;
-        }
-
-        /* 响应式布局 */
-        @media (max-width: 1200px) {
-            .main-content {
-                grid-template-columns: 1fr;
-                min-height: auto;
-            }
-
-            .left-panel {
-                height: auto;
-                max-height: none;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .status-bar {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .header-title {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            h1 {
-                text-align: left;
-                width: 100%;
-            }
-
-            .header-actions {
-                width: 100%;
-                justify-content: flex-end;
-            }
-
-            .symbol-pills {
-                flex-wrap: wrap;
-            }
-
-            .time-range-selector {
-                flex-wrap: wrap;
-            }
-
-            h1 {
-                font-size: 1.3em;
-            }
-        }
-
-        /* 加载动画 */
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .loading {
-            animation: pulse 2s ease-in-out infinite;
-        }
-
-        /* 配置模态框样式 / Configuration modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: linear-gradient(135deg, #1e2332 0%, #252937 100%);
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-            max-width: 500px;
-            width: 90%;
-        }
-
-        .modal-header {
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #3b4054;
-        }
-
-        .modal-header h2 {
-            color: #fff;
-            margin: 0;
-        }
-
-        .modal-body {
-            margin-bottom: 20px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            color: #9ca3af;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-
-        .form-group select {
-            width: 100%;
-            padding: 12px 15px;
-            background: #2d3142;
-            color: #e4e7eb;
-            border: 1px solid #3b4054;
-            border-radius: 8px;
-            font-size: 1em;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .form-group select:hover {
-            border-color: #3b82f6;
-        }
-
-        .modal-footer {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.95em;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-        }
-
-        .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-        }
-
-        .btn-secondary {
-            background: #2d3142;
-            color: #9ca3af;
-        }
-
-        .btn-secondary:hover {
-            background: #3b4054;
-            color: #fff;
-        }
-
-        .settings-btn {
-            padding: 8px 16px;
-            background: linear-gradient(135deg, #6b7280, #4b5563);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 0.9em;
-        }
-
-        .settings-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(107, 114, 128, 0.4);
-        }
-
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: 600;
-            z-index: 2000;
-            animation: slideIn 0.3s ease;
-        }
-
-        .notification-success {
-            background: linear-gradient(135deg, #10b981, #059669);
-        }
-
-        .notification-error {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -801,7 +92,7 @@
                                         {{else if eq $action "SELL"}}
                                             <span class="trade-action action-sell">SELL</span>
                                         {{else if eq $action "NO_DECISION"}}
-                                            <span class="trade-action action-no-decision" style="background: #6c757d; color: white;">N/A</span>
+                                            <span class="trade-action action-no-decision" >N/A</span>
                                         {{else}}
                                             <span class="trade-action action-hold">{{$action}}</span>
                                         {{end}}
@@ -855,8 +146,8 @@
                             <h2>资产曲线</h2>
                             <div class="currency-selector">
                                 <span class="currency-icon">$</span>
-                                <span style="color: #fff; font-weight: 600;">USD</span>
-                                <span style="color: #9ca3af;">▼</span>
+                                <span style="color: var(--text); font-weight: 600;">USD</span>
+                                <span style="color: var(--text-muted);">▼</span>
                             </div>
                         </div>
                         <div class="time-range-selector">
@@ -964,8 +255,8 @@
                                 {
                                     label: '总资产',
                                     data: data.total_assets,
-                                    borderColor: '#3b82f6',
-                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    borderColor: '#4F7CFF',
+                                    backgroundColor: 'rgba(79, 124, 255, 0.14)',
                                     tension: 0.4,
                                     fill: true,
                                     pointRadius: 0,
@@ -976,8 +267,8 @@
                                 {
                                     label: '未实现盈亏',
                                     data: data.unrealized_pnl,
-                                    borderColor: '#f59e0b',
-                                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                    borderColor: '#F0B90B',
+                                    backgroundColor: 'rgba(240, 185, 11, 0.12)',
                                     tension: 0.4,
                                     fill: true,
                                     pointRadius: 0,
@@ -1000,7 +291,7 @@
                                     display: true,
                                     position: 'top',
                                     labels: {
-                                        color: '#9ca3af',
+                                        color: '#8A93A6',
                                         font: {
                                             size: 11
                                         },
@@ -1012,10 +303,10 @@
                                 tooltip: {
                                     mode: 'nearest',
                                     intersect: false,
-                                    backgroundColor: 'rgba(30, 35, 50, 0.9)',
-                                    titleColor: '#fff',
-                                    bodyColor: '#e4e7eb',
-                                    borderColor: '#3b82f6',
+                                    backgroundColor: 'rgba(23, 28, 39, 0.96)',
+                                    titleColor: '#E8ECF4',
+                                    bodyColor: '#B6BFD0',
+                                    borderColor: 'rgba(255, 255, 255, 0.13)',
                                     borderWidth: 1,
                                     padding: 12,
                                     displayColors: true,
@@ -1038,7 +329,7 @@
                                         drawBorder: false
                                     },
                                     ticks: {
-                                        color: '#9ca3af',
+                                        color: '#8A93A6',
                                         font: {
                                             size: 11
                                         },
@@ -1055,7 +346,7 @@
                                         drawBorder: false
                                     },
                                     ticks: {
-                                        color: '#9ca3af',
+                                        color: '#8A93A6',
                                         font: {
                                             size: 11
                                         },
@@ -1075,7 +366,7 @@
                                         drawOnChartArea: false,
                                     },
                                     ticks: {
-                                        color: '#f59e0b',
+                                        color: '#F0B90B',
                                         font: {
                                             size: 11
                                         },
@@ -1196,7 +487,7 @@
                                 <td class="${roeClass}">${roe >= 0 ? '+' : ''}${roe.toFixed(2)}%</td>
                                 <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT</td>
                                 <td>$${pos.entry_price.toFixed(2)}</td>
-                                <td style="color: #ef4444; font-weight: 600;">${stopLossText}</td>
+                                <td style="color: var(--short); font-weight: 600;">${stopLossText}</td>
                                 <td>${pos.leverage}x</td>
                                 <td class="${sideClass}">${sideText}</td>
                             </tr>
@@ -1348,7 +639,7 @@
                         <option value="1d">1天 (1d)</option>
                     </select>
                 </div>
-                <p style="color: #9ca3af; font-size: 0.9em; margin-top: -10px;">
+                <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 12px;">
                     ⚠️ 更改后需要重新启动系统才能完全生效
                 </p>
             </div>
