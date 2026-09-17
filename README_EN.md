@@ -8,7 +8,7 @@ An AI agent-based cryptocurrency automated trading system - **Go implementation*
 
 Uses Large Language Models (LLM) to analyze market data, generate trading signals, and execute trades on Binance Futures. Built with **Cloudwego Eino Framework** for multi-agent parallel orchestration.
 
-![Trading Bot Dashboard](assets/fig5.png)
+![Crypto-Trading-Bot dashboard](assets/dashboard.png)
 
 
 
@@ -76,11 +76,17 @@ This bot follows a **trend-following, highly selective** trading approach:
 - **Independent Position Management**: Each pair has independent stop-loss and risk control
 
 ### 🌐 Web Monitoring Dashboard
-- **Real-time Balance Chart**: Auto-updates every 30 seconds with adaptive Y-axis
-- **Position Visualization**: Display all active positions and P&L in real-time
-- **Trade History**: View all analysis sessions and trading decisions
-- **Next Trade Countdown**: Precise countdown timer to the next trade
-- **Dual Timeframe Display**: Shows both K-line interval and execution interval
+Organised around three questions, in order: **am I up, what am I exposed to, was it disciplined.**
+- **Equity**: current equity, P&L against starting capital, and an equity curve with a
+  reference line at the starting balance
+- **Positions**: side, leverage, entry vs mark, unrealised P&L, and **how much room is
+  left before the stop triggers** (warning state under 1.5%)
+- **Decisions**: every decision including the **holds**, each with the model's own
+  rationale — selectivity is the strategy, so hiding holds hides the evidence for it
+- **Discipline**: selectivity (one mark per decision, so the trade/hold rhythm is
+  visible at a glance), **win/loss ratio**, win rate, realised P&L
+- **Accessibility**: every text token meets WCAG AAA contrast; figures carry no colour
+  and state their own sign, so reading a value never depends on hue
 
 ### 💾 Data Persistence
 - **SQLite Database**: Store trading sessions, position history, balance snapshots
@@ -210,6 +216,9 @@ make run
 # Web monitoring mode (continuous + web interface)
 make run-web
 
+# UI preview only: sample data, no API keys, never places an order
+make run-ui
+
 # Query historical data
 make query ARGS="stats"                 # View statistics
 make query ARGS="latest 10"             # Last 10 sessions
@@ -299,7 +308,12 @@ CRYPTO_SYMBOLS=BTC/USDT,ETH/USDT,SOL/USDT
 curl http://localhost:8080/api/balance/current    # Real-time balance
 curl http://localhost:8080/api/balance/history    # Balance history
 curl http://localhost:8080/api/positions          # Current positions
+curl http://localhost:8080/api/performance        # Selectivity / win-loss ratio / win rate
 ```
+
+> Want to look at the interface without Binance or LLM credentials? Run `make run-ui`.
+> It serves the same pages against a seeded sample dataset, needs no API keys, and
+> **never places an order**.
 
 ---
 
@@ -310,6 +324,7 @@ crypto-trading-bot/
 ├── cmd/
 │   ├── main.go           # Single execution mode entry
 │   ├── web/main.go       # Web monitoring mode entry
+│   ├── uipreview/main.go # UI preview (sample data, never trades)
 │   └── query/main.go     # Data query tool
 ├── internal/
 │   ├── agents/           # AI agents (Eino Graph workflow)

@@ -9,8 +9,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"time"
 
@@ -64,11 +69,77 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The dashboard runs on an internal port; a thin proxy in front of it serves
+	// demo data for the two endpoints that require a live Binance connection.
+	// 仪表盘运行在内部端口上；前面的轻量代理为两个需要实时连接币安的接口提供演示数据。
+	const internalPort = 8090
+	cfg.WebPort = internalPort
+
 	// stopLossManager is nil: every handler that touches it is nil-guarded.
 	srv := web.NewServer(cfg, log, db, nil, sched)
+	go srv.Start()
 
-	fmt.Printf("UI preview on http://localhost:%d  (admin / preview)\n", cfg.WebPort)
-	srv.Start()
+	fmt.Printf("UI preview on http://localhost:%d  (admin / preview)\n", publicPort)
+	if err := serveProxy(publicPort, internalPort); err != nil {
+		fmt.Fprintf(os.Stderr, "proxy: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// publicPort is the port the preview is actually browsed on.
+// publicPort 是实际访问预览时使用的端口
+const publicPort = 8080
+
+// serveProxy forwards to the real dashboard, standing in for the two endpoints
+// that need a live Binance account.
+// serveProxy 将请求转发给真实仪表盘，只替换两个需要真实币安账户的接口
+//
+// Everything else — templates, routes, auth, the database — is the real server.
+// Without this, the equity figure and the positions panel are empty on any
+// machine that cannot reach Binance, which is most machines running a UI review.
+// 其余部分（模板、路由、鉴权、数据库）都是真实服务。
+// 若没有这层代理，在无法访问币安的机器上，权益数值与持仓面板都会是空的，
+// 而做界面评审的机器大多属于此类。
+func serveProxy(from, to int) error {
+	target, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", to))
+	if err != nil {
+		return err
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	demo := map[string]string{
+		"/api/balance/current": `{"total_balance":11450.02,"available_balance":8230.11,` +
+			`"unrealized_pnl":236.58,"positions":2}`,
+		"/api/positions/live": `{"positions":[` +
+			`{"symbol":"BTCUSDT","side":"long","size":0.125,"entry_price":86420.50,` +
+			`"current_price":88730.00,"unrealized_pnl":288.75,"roe":40.1,"leverage":15,` +
+			`"liquidation_price":79100.00,"current_stop_loss":87310.00},` +
+			`{"symbol":"SOLUSDT","side":"short","size":18.5,"entry_price":198.42,` +
+			`"current_price":195.60,"unrealized_pnl":-52.17,"roe":-14.2,"leverage":10,` +
+			`"liquidation_price":221.40,"current_stop_loss":196.85}],"count":2}`,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if body, ok := demo[r.URL.Path]; ok {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = io.WriteString(w, body)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	})
+
+	// Wait for the dashboard to bind before accepting traffic
+	// 等待仪表盘完成端口绑定后再接收流量
+	for i := 0; i < 50; i++ {
+		if c, err := net.DialTimeout("tcp", target.Host, 200*time.Millisecond); err == nil {
+			_ = c.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return http.ListenAndServe(fmt.Sprintf(":%d", from), mux)
 }
 
 // seed fills the database with plausible trading history so every page and
